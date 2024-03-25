@@ -52,7 +52,7 @@ class PWQP():
         self.JacFsp= np.zeros((4,n_ddq))
         self.JacFsp[[0,1,2,3],[10,12,25,27]]=1
 
-        self.pdesddq = cp.Parameter((n_u,1),'des_ddq') #desired actuated acceleration
+        self.pdesddq = cp.Parameter((n_u-2,1),'des_ddq') #desired actuated acceleration
 
         self.pAG = cp.Parameter((6,n_ddq),'AG') #CMM
         self.pdAGdq = cp.Parameter((6,1),'dAGdq') #dCMMdq
@@ -80,6 +80,15 @@ class PWQP():
         self.w_foot = 0.07 #for xaxis
         self.z_c = 2 #for zaxis
         
+        q_act_idx, dq_act_idx = self.Dcf.get_actuated_indices()
+        
+        if self.stance == ControllerStance.RIGHT_STANCE:
+            self.q_act_idx = self.exclude_swing_foot_indices(q_act_idx, 4, 5)
+            self.dq_act_idx = self.exclude_swing_foot_indices(dq_act_idx, 4, 5)
+        else:
+            self.q_act_idx = self.exclude_swing_foot_indices(q_act_idx, 14, 15)
+            self.dq_act_idx = self.exclude_swing_foot_indices(dq_act_idx, 14, 15)
+            
         #formulate problems,
         # walking
         self.WalkingProb = self._getWalkProb()
@@ -87,7 +96,11 @@ class PWQP():
 
         self.Cur_e_h= np.zeros((12,1)) #error of the custom output
         self.Cur_hang = np.zeros((3,1)) #hangular momentum
-        
+    
+    def exclude_swing_foot_indices(self, arr, i, j):
+        # Use a list comprehension to include elements whose indices are not i or j
+        return [arr[k] for k in range(len(arr)) if k != i and k != j]
+    
     "getConstraints"
     def _getEOMSSConstraint(self): # EOM of Single support base
         constraints = [self.pH@self.vddq + self.pC_terms == self.ptau + self.pJacCL.T@self.vlambdaCL + self.pJacStF.T@self.vlambdaStF + self.JacFsp.T@self.vlambdaFsp  + self.B@self.vu,  #EOM
@@ -133,8 +146,8 @@ class PWQP():
         # TODO: Remove swing foot toe A and B from the cost function
         
         # Calculate the configuration cost component for specified joints
-        _, dq_act_idx = self.Dcf.get_actuated_indices()
-        configuration_cost = cp.sum_squares(self.vddq[dq_act_idx] - self.pdesddq)
+        # _, dq_act_idx = self.Dcf.get_actuated_indices()
+        configuration_cost = cp.sum_squares(self.vddq[self.dq_act_idx] - self.pdesddq)
 
         # Define the weight matrix for task output deviation
         W1 = np.diag([1] * 5) * np.sqrt(10)
@@ -187,7 +200,15 @@ class PWQP():
         # Return the constructed optimization problem
         return prob
     
-    def WalkingQP(self, q, dq, isRightStance, s, PSwFk_1, thSwFk_1, des_comz, T, PSwFk, des_x_LIP, des_thSwFk):
+    def WalkingQP(self, 
+                  s, 
+                  PSwFk_1 = np.zeros((3,1)), 
+                  thSwFk_1 = 0.0, 
+                  des_comz = 0.9, 
+                  T = 0.3, 
+                  PSwFk = np.zeros((3,1)),
+                  des_x_LIP = np.zeros((4,1)),
+                  des_thSwFk = 0.0):
         """
         Formulates and solves a walking Quadratic Program (QP) for the robot.
 
@@ -207,17 +228,19 @@ class PWQP():
         Returns:
         - The solution to the QP as control inputs for the robot.
         """
+        q, dq = self.Dcf.get_state()
+        
         # Extract parameters and set Jacobians
         self._extractAndSetParameters()
         
         hG_ang = self.Dcf.get_CM()[0:3]
         self.pdesdhG.value = -1*hG_ang
         
-        q_act_idx, dq_act_idx = self.Dcf.get_actuated_indices()
-        self.pdesddq.value = (-1500*(q[q_act_idx]-self.get_desired_actuated_configuration(s)) -10*dq[dq_act_idx]).reshape((20,1))
+        # q_act_idx, dq_act_idx = self.Dcf.get_actuated_indices()
+        self.pdesddq.value = (-1500*(q[self.q_act_idx]-self.q_actuated_des[self.q_act_idx]) -10*dq[self.dq_act_idx]).reshape((18,1))
         
         # Set foot orientations and velocities based on swing foot side
-        SwFoot = -1 if isRightStance else 1
+        SwFoot = -1 if self.stance == ControllerStance.RIGHT_STANCE else 1
         T_SwF, V_SwF, T_StF, V_StF = self._setFootOrientationsAndVelocities(SwFoot)
         
         yawStF = np.arctan2(T_StF[1,0],T_StF[0,0])
@@ -505,8 +528,10 @@ class PWQP():
     def get_desired_actuated_configuration(self, phase):
         return self.desired_arm_q
     
-    def set_desired_arm_q(self, des_arm_q):
-        self.desired_arm_q = des_arm_q
+    def set_desired_arm_q(self, des_arm_q, des_arm_qd, des_arm_qdd):
+        self.q_actuated_des = des_arm_q
+        self.dq_actuated_des = des_arm_qd
+        self.ddq_actuated_des = des_arm_qdd
     
     "Utility Functions"
     def QuatOriError(self, desQuat, curQuat):

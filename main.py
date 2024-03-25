@@ -35,7 +35,7 @@ class DigitSimulation:
         self.q_i = [0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 14, 15, 16, 17, 18, 23, 28, 29, 30, 31, 32, 33, 34, 35, 36, 41, 42, 43, 44, 45, 50, 55, 56, 57, 58, 59, 60]
         self.dq_i = [0,  1,  2,  3,  4,  5,  6,  7,  8, 12, 13, 14, 15, 16, 20, 24, 25, 26, 27, 28, 29, 30, 31, 32, 36, 37, 38, 39, 40, 44, 48, 49, 50, 51, 52, 53]
 
-        self.update_robot_state()
+        self.update_controller_state()
         self.T_SwFoot, _ = self.select_foot()
         self.update_swing_foot_state()
 
@@ -69,7 +69,7 @@ class DigitSimulation:
             9.228187573855245462e-02, 0.106437, -0.89488, 1.860540486313262858e-05, -0.344684
             ])
 
-    def update_robot_state(self):
+    def update_controller_state(self):
         q, dq, _ = self.output()
         self.PWQP.Dcf.set_state(q, dq)
 
@@ -135,9 +135,6 @@ class DigitSimulation:
         #    or the spring force exceeds a threshold, indicating contact.
         isRightStance = self.state == StanceState.RIGHT_STANCE.name
         if self.s >= 0.5 and (PSwFoot[2] < 1e-2 or self.PWQP.SwFspring(q, isRightStance) > 0.01):
-            # Switch stance state
-            self.switch_stance()
-            
             # Reset timing and progress variables
             self.s = 0
             self.Tk_1 = self.t_MPC_lastrun = self.data.time
@@ -145,6 +142,9 @@ class DigitSimulation:
             # Update the position and angle of the swinging foot to become the new stance foot
             self.PSwFk_1 = PStFoot[:2]
             self.thSwFk_1 = self.update_swing_foot_angle(self.T_SwFoot)
+            
+            # Switch stance state
+            self.switch_stance()
 
     def update_swing_foot_angle(self, T_SwFoot):
         """Computes and unwraps the angle of the swinging foot based on its current transformation matrix."""
@@ -154,14 +154,18 @@ class DigitSimulation:
     def run(self):
         while self.viewer.is_running():
             step_start = time.time()
-            self.update_robot_state()
+            
+            self.update_controller_state()
+            
             self.T_SwFoot, self.T_StFoot = self.select_foot()
+            
             ctrl = self.solve_MPCC_and_QP()
-            self.foot_switching_algo()
 
             # Step simulation forward
             self.data.ctrl = ctrl
             mujoco.mj_step(self.model, self.data, nstep=15)
+            
+            self.foot_switching_algo()
 
             # Synchronize the viewer with the simulation state
             with self.viewer.lock():

@@ -37,7 +37,10 @@ class GaitDataLoader:
         ddq_des = np.dot((self.alpha[:, 2:] - 2 * self.alpha[:, 1:-1] + self.alpha[:, :-2]), dd_bezier_basis) / (self.t_step ** 2)
         
         return q_des.squeeze(), dq_des.squeeze(), ddq_des.squeeze()
-
+    
+    def evaluate_bezier_curve_relabelled(self, phase):
+        q_des, dq_des, ddq_des = self.evaluate_bezier_curve(phase)
+        return q_des.squeeze(), dq_des.squeeze(), ddq_des.squeeze()
 
 def plot_gait_data(gait_data_loader: GaitDataLoader):
     rows = gait_data_loader.alpha.shape[0]

@@ -212,7 +212,7 @@ class PWQP():
         # Extract parameters and set Jacobians
         self._extractAndSetParameters(SwFoot)
         
-        hG_ang = self.Dcf.get_CM()
+        hG_ang = self.Dcf.get_CM()[0:3]
         self.pdesdhG.value[0:3] = -1*hG_ang
         
         self.pdesddq.value = (-100*(q[[18,19,20,21, 33,34,35,36]]-self.handDesqpos()) -10*dq[[17,18,19,20, 32,33,34,35]]).reshape((8,1))

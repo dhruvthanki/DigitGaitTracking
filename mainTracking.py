@@ -9,6 +9,7 @@ from transitions import Machine
 from cWBQP import PWQP
 from C_MPCC import LIPMPC
 from angles import Angle
+from GaitDataLoader import GaitDataLoader
 
 class StanceState(Enum):
     RIGHT_STANCE = auto()
@@ -16,6 +17,8 @@ class StanceState(Enum):
 
 class DigitSimulation:
     def __init__(self, model_file='models/digit-v3.xml'):
+        self.gait_data_loader = GaitDataLoader('Digit-data_12699.mat')
+
         self.model = mujoco.MjModel.from_xml_path(model_file)
         self.data = mujoco.MjData(self.model)
         self.viewer = mujoco.viewer.launch_passive(self.model, self.data)
@@ -35,12 +38,11 @@ class DigitSimulation:
         self.q_i = [0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 14, 15, 16, 17, 18, 23, 28, 29, 30, 31, 32, 33, 34, 35, 36, 41, 42, 43, 44, 45, 50, 55, 56, 57, 58, 59, 60]
         self.dq_i = [0,  1,  2,  3,  4,  5,  6,  7,  8, 12, 13, 14, 15, 16, 20, 24, 25, 26, 27, 28, 29, 30, 31, 32, 36, 37, 38, 39, 40, 44, 48, 49, 50, 51, 52, 53]
         
-        q, dq, _ = self.output()
-        self.PWQP.Dcf.set_state(q, dq)
+        self.update_robot_state()
+        
         q_actuated = self.PWQP.Dcf.get_actuated_q()
         self.PWQP.set_desired_arm_q(q_actuated)
         
-        self.update_robot_state()
         self.T_SwFoot, _ = self.select_foot()
         self.update_swing_foot_state()
 
@@ -101,7 +103,6 @@ class DigitSimulation:
         
         isRightStance = self.state == StanceState.RIGHT_STANCE.name
         
-        ##### Solve QP
         try:
             self.ctrl = self.PWQP.WalkingQP(q,dq,isRightStance,self.s,self.PSwFk_1,self.thSwFk_1,self.MPC.H,self.MPC.Tst,np.array([0.0,0.0,0]),np.zeros((4,1)),0.0)
         except:
@@ -133,6 +134,9 @@ class DigitSimulation:
             # Update the position and angle of the swinging foot to become the new stance foot
             self.PSwFk_1 = PStFoot[:2]
             self.thSwFk_1 = self.update_swing_foot_angle(self.T_SwFoot)
+            
+            return True
+        return False
 
     def update_swing_foot_angle(self, T_SwFoot):
         """Computes and unwraps the angle of the swinging foot based on its current transformation matrix."""
@@ -145,7 +149,9 @@ class DigitSimulation:
             self.update_robot_state()
             self.T_SwFoot, self.T_StFoot = self.select_foot()
             ctrl = self.solve_QP()
-            self.foot_switching_algo()
+            contact = self.foot_switching_algo()
+            if contact:
+                break
 
             # Step simulation forward
             self.data.ctrl = ctrl
@@ -164,6 +170,9 @@ class DigitSimulation:
     def get_unwrapped_theta_to_last(self, theta, theta_last):
         diff_theta = (Angle(theta) - Angle(theta_last))
         return theta_last + diff_theta.toRadian
+    
+    def get_desired_actuated_configuration(self, phase):
+        return self.gait_data_loader.evaluate_bezier_curve(phase)
 
 if __name__ == "__main__":
     digitSimulation = DigitSimulation()

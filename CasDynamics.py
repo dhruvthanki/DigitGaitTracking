@@ -10,12 +10,12 @@ class DigitCasadiWrapper:
         self.q = np.zeros((37))
         self.dq = np.zeros((36))
         
-        self.q_actuated = [7, 8, 9, 10,
-                           14, 15,
-                           18, 19, 20, 21,
-                           22, 23, 24, 25,
-                           29, 30,
-                           33, 34, 35, 36]
+        self.q_actuated = [7, 8, 9, 10, # left leg
+                           14, 15, # left toe A and B
+                           18, 19, 20, 21, # left hand
+                           22, 23, 24, 25, # right leg
+                           29, 30, # right toe A and B
+                           33, 34, 35, 36] # right hand
         self.dq_actuated = [x - 1 for x in self.q_actuated]
         
     def get_actuated_indices(self):
@@ -27,6 +27,9 @@ class DigitCasadiWrapper:
     def set_state(self, q, dq):
         self.q = q
         self.dq = dq
+        
+    def get_state(self):
+        return self.q, self.dq
 
     def get_B_matrix(self):
         return self.Dcf.Dynamics.B()['o0'].full()
@@ -95,4 +98,9 @@ class DigitCasadiWrapper:
         return pose[0:3,3], vel
     
     def get_CM(self):
-        return self.Dcf.Dynamics.CM(self.q, self.dq).full()[0:3]
+        return self.Dcf.Dynamics.CM(self.q, self.dq).full()
+    
+    def get_u_limit(self):
+        return np.array([[1.4,   1.4,  12.5,  12.5,   0.9,   0.9,   1.4,   1.4,   1.4,
+                          1.4,   1.4,   1.4,  12.5,  12.5,   0.9,   0.9,   1.4,   1.4,
+                          1.4,   1.4]]).T
