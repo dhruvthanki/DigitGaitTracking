@@ -1,4 +1,6 @@
 import time
+
+import keyboard
 import numpy as np
 import mujoco
 import mujoco.viewer
@@ -12,6 +14,7 @@ class DigitSimulation:
     DATA_FILE = 'Digit-data_12699.mat'
 
     def __init__(self):
+        self.unpause = False
         self.model = mujoco.MjModel.from_xml_path(self.MODEL_FILE)
         self.data = mujoco.MjData(self.model)
         self.viewer = mujoco.viewer.launch_passive(self.model, self.data)
@@ -19,7 +22,7 @@ class DigitSimulation:
         self.initialize_simulation()
     
     def initialize_simulation(self):
-        self.t_step = self.gait_data_loader.t_step[0,0][0,0]
+        self.t_step = self.gait_data_loader.t_step
         self.last_impact_time = 0
         self.setup_indices()
         self.setup_state_machine()
@@ -102,6 +105,7 @@ class DigitSimulation:
             self.data.ctrl = self.solve_qp()
             mujoco.mj_step(self.model, self.data, nstep=15)
             # self.foot_switching_algo()
+                # self.unpause = True
 
             self.sync_viewer(step_start)
 

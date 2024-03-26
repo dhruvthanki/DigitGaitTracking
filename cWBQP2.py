@@ -166,7 +166,7 @@ class PWQP():
             qIindices = [0,1,2,3,6,7,8,9,10,11,12,13,14,15,16,17,18,19]
         else:
             qIindices = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,16,17,18,19]
-        self.pdesddq.value = (-150*(q[self.q_act_idx] - self.q_actuated_des[qIindices]) - 10*dq[self.dq_act_idx]).reshape((18,1))
+        self.pdesddq.value = (self.ddq_actuated_des[qIindices] - 150*(q[self.q_act_idx] - self.q_actuated_des[qIindices]) - 10*(dq[self.dq_act_idx] - self.dq_actuated_des[qIindices])).reshape((18,1))
         
         yawStF = np.arctan2(T_StF[1,0],T_StF[0,0])
         self.R2StF.value = np.array([[np.cos(yawStF),-np.sin(yawStF)],[np.sin(yawStF),np.cos(yawStF)]]).T

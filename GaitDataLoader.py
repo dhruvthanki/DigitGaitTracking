@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 class GaitDataLoader:
     def __init__(self, data_path):
         self.gait_data = spio.loadmat(data_path)['data']
-        self.t_step = self.gait_data['final_time']
+        self.t_step = self.gait_data['final_time'][0][0][0][0]
         self.alpha = self.process_alpha_indices(self.gait_data['a'][0, 0])
         self.combinations, self.d_combinations, self.dd_combinations = self.precompute_combination_terms(self.alpha.shape[1] - 1)
 
@@ -69,4 +69,4 @@ if __name__ == '__main__':
     gait_data_loader = GaitDataLoader('Digit-data_12699.mat')
     plot_gait_data(gait_data_loader)
     qpos, qvel,qacc = gait_data_loader.evaluate_bezier_curve(0.0)
-    print(qpos)
+    print(qvel)
