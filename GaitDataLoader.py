@@ -12,7 +12,12 @@ class GaitDataLoader:
 
     @staticmethod
     def process_alpha_indices(alpha):
-        indices = np.array([0, 1, -2, 3, 4, 5, 10, 11, -12, 13, 14, 15, 6, -7, 8, 9, 16, -17, 18, 19])
+        indices = np.array([0, 1, -2, 3, # left leg
+                            4, 5, # right toe A and B
+                            6, -7, 8, 9, # left hand
+                            10, 11, -12, 13, # right leg
+                            14, 15, # right toe A and B
+                            16, -17, 18, 19]) # right hand
         return np.array([alpha[abs(idx)] if idx >= 0 else -alpha[abs(idx)] for idx in indices]).reshape(20, -1)
 
     @staticmethod
@@ -63,3 +68,5 @@ def plot_gait_data(gait_data_loader: GaitDataLoader):
 if __name__ == '__main__':
     gait_data_loader = GaitDataLoader('Digit-data_12699.mat')
     plot_gait_data(gait_data_loader)
+    qpos, qvel,qacc = gait_data_loader.evaluate_bezier_curve(0.0)
+    print(qpos)

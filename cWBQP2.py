@@ -137,7 +137,7 @@ class PWQP():
         configuration_cost = cp.sum_squares(self.vddq[self.dq_act_idx] - self.pdesddq)
 
         # Define the weight matrix for task output deviation
-        W1 = np.diag([1] * 5) * np.sqrt(10)
+        W1 = np.diag([1] * 5) * np.sqrt(5)
 
         # Calculate the task output deviation cost component
         term_A = self._getTaskOutput_ddh()[[0, 1, 5, 6, 7]]
@@ -151,7 +151,7 @@ class PWQP():
         total_cost = (task_output_deviation_cost +
                     0.1 * control_effort_cost +
                     3 * centroidal_momentum_cost +
-                    1000.0 * configuration_cost)
+                    10.0 * configuration_cost)
 
         objective = cp.Minimize(total_cost)
 
@@ -166,7 +166,7 @@ class PWQP():
             qIindices = [0,1,2,3,6,7,8,9,10,11,12,13,14,15,16,17,18,19]
         else:
             qIindices = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,16,17,18,19]
-        self.pdesddq.value = (-1500*(q[self.q_act_idx] - self.q_actuated_des[qIindices]) - 10*dq[self.dq_act_idx]).reshape((18,1))
+        self.pdesddq.value = (-150*(q[self.q_act_idx] - self.q_actuated_des[qIindices]) - 10*dq[self.dq_act_idx]).reshape((18,1))
         
         yawStF = np.arctan2(T_StF[1,0],T_StF[0,0])
         self.R2StF.value = np.array([[np.cos(yawStF),-np.sin(yawStF)],[np.sin(yawStF),np.cos(yawStF)]]).T
@@ -181,8 +181,8 @@ class PWQP():
         self._applyControlLaw(e, de, hdd_desired)
 
         # Solve the Walking QP
-        self.WalkingProb.solve(warm_start=True, solver=cp.OSQP, verbose=True)
-        print(f"optimal value with ECOS: {self.WalkingProb.value}")
+        self.WalkingProb.solve(warm_start=True, solver=cp.ECOS, verbose=False)
+        # print(f"optimal value with ECOS: {self.WalkingProb.value}")
 
         return self.vu.value.squeeze()
     
