@@ -63,9 +63,11 @@ class PWQP():
         if self.stance == ControllerStance.RIGHT_STANCE:
             self.q_act_idx = self.exclude_swing_foot_indices(q_act_idx, 4, 5)
             self.dq_act_idx = self.exclude_swing_foot_indices(dq_act_idx, 4, 5)
+            self.qIindices = [0,1,2,3,6,7,8,9,10,11,12,13,14,15,16,17,18,19]
         else:
             self.q_act_idx = self.exclude_swing_foot_indices(q_act_idx, 14, 15)
             self.dq_act_idx = self.exclude_swing_foot_indices(dq_act_idx, 14, 15)
+            self.qIindices = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,16,17,18,19]
             
         self.q_actuated_des, self.dq_actuated_des, self.ddq_actuated_des = np.zeros((self.n_u,1)), np.zeros((self.n_u,1)), np.zeros((self.n_u,1))
         
@@ -134,10 +136,22 @@ class PWQP():
         centroidal_momentum_cost = cp.sum_squares(self.pAG[0:3, :] @ self.vddq + self.pdAGdq[0:3] - self.pdesdhG)
         
         # Calculate the configuration cost component for specified joints
-        configuration_cost = cp.sum_squares(self.vddq[self.dq_act_idx] - self.pdesddq)
+        if self.stance == ControllerStance.RIGHT_STANCE:
+            wConfig = np.concatenate([1.0*np.ones((4)),
+                                      1*np.ones((4)),
+                                      1*np.ones((4)),
+                                      1*np.ones((2)),
+                                      1*np.ones((4))])
+        else:
+            wConfig = np.concatenate([1*np.ones((4)),
+                                      1*np.ones((2)),
+                                      1*np.ones((4)),
+                                      1.0*np.ones((4)),
+                                      1*np.ones((4))])
+        configuration_cost = cp.sum_squares(  (self.vddq[self.dq_act_idx] - self.pdesddq))
 
         # Define the weight matrix for task output deviation
-        W1 = np.diag([1] * 5) * np.sqrt(5)
+        W1 = np.diag([1,1,10,10,10]) # base orientation roll, pitch, com acceleration z, swing foot orientation roll, pitch
 
         # Calculate the task output deviation cost component
         term_A = self._getTaskOutput_ddh()[[0, 1, 5, 6, 7]]
@@ -148,10 +162,10 @@ class PWQP():
         control_effort_cost = cp.sum_squares(self.vu)
 
         # Combine all cost components into the total objective
-        total_cost = (task_output_deviation_cost +
-                    0.1 * control_effort_cost +
-                    3 * centroidal_momentum_cost +
-                    10.0 * configuration_cost)
+        total_cost = (100*task_output_deviation_cost +
+                    1 * control_effort_cost +
+                    2 * centroidal_momentum_cost +
+                    5*configuration_cost)
 
         objective = cp.Minimize(total_cost)
 
@@ -162,11 +176,9 @@ class PWQP():
         
         T_SwF, V_SwF, T_StF, _ = self.extractAndSetParameters()
         
-        if self.stance == ControllerStance.RIGHT_STANCE:
-            qIindices = [0,1,2,3,6,7,8,9,10,11,12,13,14,15,16,17,18,19]
-        else:
-            qIindices = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,16,17,18,19]
-        self.pdesddq.value = (self.ddq_actuated_des[qIindices] - 150*(q[self.q_act_idx] - self.q_actuated_des[qIindices]) - 10*(dq[self.dq_act_idx] - self.dq_actuated_des[qIindices])).reshape((18,1))
+        kp = 1000
+        kd = 2*np.sqrt(kp)
+        self.pdesddq.value = (self.ddq_actuated_des[self.qIindices] - kp*(q[self.q_act_idx] - self.q_actuated_des[self.qIindices]) - kd*(dq[self.dq_act_idx] - self.dq_actuated_des[self.qIindices])).reshape((18,1))
         
         yawStF = np.arctan2(T_StF[1,0],T_StF[0,0])
         self.R2StF.value = np.array([[np.cos(yawStF),-np.sin(yawStF)],[np.sin(yawStF),np.cos(yawStF)]]).T
