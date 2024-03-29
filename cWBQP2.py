@@ -11,11 +11,12 @@ class ControllerStance(Enum):
     RIGHT_STANCE = auto()
     
 class PWQP():
-    def __init__(self, stance: ControllerStance = ControllerStance.RIGHT_STANCE, com_height: float = 0.0):
+    def __init__(self, stance: ControllerStance = ControllerStance.RIGHT_STANCE, doubleStance: bool = True):
         self.stance = stance
-        self.com_height = com_height
+        self.des_com_pos = np.array([0.05, 0.0, 0.9])
+        self.des_com_vel = np.array([0.0, 0.0, 0.0])
         self.Dcf = DigitCasadiWrapper()
-        
+        self.doubleStance = doubleStance
         self.totM = 47.925414
         
         self.n_ddq = 36
@@ -45,7 +46,9 @@ class PWQP():
         self.pdJacCLdq = cp.Parameter((self.n_JacCL, 1), name='dJacCLdq')
         self.pdJacStFdq = cp.Parameter((self.n_JacStF, 1), name='dJacStFdq')
         self.R2StF = cp.Parameter((2,2),'R2x2StF') #stance foot rotation matrix 2x2
-        self.pdesddq = cp.Parameter((self.n_u-2,1),'des_ddq')
+        self.R2SwF = cp.Parameter((2,2),'R2x2SwF') #stance foot rotation matrix 2x2
+        if self.doubleStance:
+            self.vlambdaSwF = cp.Variable((self.n_JacStF, 1), name='lambdaSwF')
         self.pdesddh = cp.Parameter((12,1),'desddh') #desired output space acc
         
         self.pJacSwF = cp.Parameter((self.n_JacStF,self.n_ddq),'JacSwF') #swing foot constraint
@@ -58,21 +61,25 @@ class PWQP():
         self.B = self.Dcf.get_B_matrix()
         self.vu_limit = self.Dcf.get_u_limit().reshape((self.n_u,1))
         
-        q_act_idx, dq_act_idx = self.Dcf.get_actuated_indices()
-        
         if self.stance == ControllerStance.RIGHT_STANCE:
-            self.q_act_idx = self.exclude_swing_foot_indices(q_act_idx, 4, 5)
-            self.dq_act_idx = self.exclude_swing_foot_indices(dq_act_idx, 4, 5)
-            self.qIindices = [0,1,2,3,6,7,8,9,10,11,12,13,14,15,16,17,18,19]
+            self.exclude_list = [4, 5, 14, 15]
         else:
-            self.q_act_idx = self.exclude_swing_foot_indices(q_act_idx, 14, 15)
-            self.dq_act_idx = self.exclude_swing_foot_indices(dq_act_idx, 14, 15)
-            self.qIindices = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,16,17,18,19]
-            
+            self.exclude_list = [4, 5, 14, 15]
+        
+        q_act_idx, dq_act_idx = self.Dcf.get_actuated_indices()
+        self.q_act_idx = self.exclude_swing_foot_indices(q_act_idx, self.exclude_list)
+        self.dq_act_idx = self.exclude_swing_foot_indices(dq_act_idx, self.exclude_list)
+        self.qIindices = [i for i in range(20) if i not in self.exclude_list]
+        
+        self.pdesddq = cp.Parameter((self.n_u-len(self.exclude_list),1),'des_ddq')
         self.q_actuated_des, self.dq_actuated_des, self.ddq_actuated_des = np.zeros((self.n_u,1)), np.zeros((self.n_u,1)), np.zeros((self.n_u,1))
         
         self.WalkingProb = self.getWalkProb()
         
+    def exclude_swing_foot_indices(self, arr, exclude_indices):
+        # Use a list comprehension to include elements whose indices are not in exclude_indices
+        return [arr[k] for k in range(len(arr)) if k not in exclude_indices]
+    
     def getWalkProb(self):
         """
         Creates a cvxpy problem for Standing QP (Quadratic Programming).
@@ -84,6 +91,8 @@ class PWQP():
         Constraints.extend(self.getSingleStanceDynamics())
         Constraints.extend(self.getTorqueBoundConstraints())
         Constraints.extend(self.getStanceContactWrenchConstraint(self.vlambdaStF, self.R2StF))
+        if self.doubleStance:
+            Constraints.extend(self.getStanceContactWrenchConstraint(self.vlambdaSwF, self.R2SwF))
 
         Objective = self.getQPCost()
 
@@ -96,10 +105,18 @@ class PWQP():
         return prob
     
     def getSingleStanceDynamics(self):
-        return [self.pH@self.vddq + self.pC_terms == self.ptau + self.pJacCL.T@self.vlambdaCL + self.pJacStF.T@self.vlambdaStF + self.JacFsp.T@self.vlambdaFsp  + self.B@self.vu,  #EOM
+        if self.doubleStance:
+            constraints = [self.pH@self.vddq + self.pC_terms == self.ptau + self.pJacCL.T@self.vlambdaCL + self.pJacStF.T@self.vlambdaStF + self.pJacSwF.T@self.vlambdaSwF + self.JacFsp.T@self.vlambdaFsp  + self.B@self.vu,  #EOM
+                self.pJacCL@self.vddq + self.pdJacCLdq == 0, # closed loop constraint
+                self.pJacStF@self.vddq + self.pdJacStFdq == 0,# stance foot constraint
+                self.pJacSwF@self.vddq + self.pdJacSwFdq == 0,
+                self.JacFsp@self.vddq ==0] #stiff spring
+        else :
+            constraints = [self.pH@self.vddq + self.pC_terms == self.ptau + self.pJacCL.T@self.vlambdaCL + self.pJacStF.T@self.vlambdaStF + self.JacFsp.T@self.vlambdaFsp  + self.B@self.vu,  #EOM
                 self.pJacCL@self.vddq + self.pdJacCLdq == 0, # closed loop constraint
                 self.pJacStF@self.vddq + self.pdJacStFdq == 0,# stance foot constraint
                 self.JacFsp@self.vddq ==0] #stiff spring
+        return constraints
     
     def getTorqueBoundConstraints(self):
         return [self.vu <= self.vu_limit, self.vu >= -self.vu_limit]
@@ -118,10 +135,6 @@ class PWQP():
                 vlambdaF[2] <= +self.mu*(self.l_foot+self.w_foot)/2*vlambdaF[5]
                                 - cp.abs(self.w_foot/2*(R[0,0]*vlambdaF[3] + R[0,1]*vlambdaF[4])+self.mu*(R[0,0]*vlambdaF[0] + R[0,1]*vlambdaF[1]))
                                 - cp.abs(self.l_foot/2*(R[1,0]*vlambdaF[3] + R[1,1]*vlambdaF[4])+self.mu*(R[1,0]*vlambdaF[0] + R[1,1]*vlambdaF[1]))]
-    
-    def exclude_swing_foot_indices(self, arr, i, j):
-        # Use a list comprehension to include elements whose indices are not i or j
-        return [arr[k] for k in range(len(arr)) if k != i and k != j]
 
     def getQPCost(self):
         """
@@ -137,35 +150,37 @@ class PWQP():
         
         # Calculate the configuration cost component for specified joints
         if self.stance == ControllerStance.RIGHT_STANCE:
-            wConfig = np.concatenate([1.0*np.ones((4)),
-                                      1*np.ones((4)),
-                                      1*np.ones((4)),
-                                      1*np.ones((2)),
-                                      1*np.ones((4))])
+            wConfig = np.concatenate([1*np.ones((4)), # left hip
+                                    #   0.1*np.ones((2)), # left toe a and b
+                                      1*np.ones((4)), # left hand
+                                      1*np.ones((4)), # right hip
+                                    #   1*np.ones((2)), # right toe a and b
+                                      1*np.ones((4))]) # right hand
         else:
-            wConfig = np.concatenate([1*np.ones((4)),
-                                      1*np.ones((2)),
-                                      1*np.ones((4)),
-                                      1.0*np.ones((4)),
-                                      1*np.ones((4))])
-        configuration_cost = cp.sum_squares(  (self.vddq[self.dq_act_idx] - self.pdesddq))
+            wConfig = np.concatenate([1*np.ones((4)), # left hip
+                                    #   0.1*np.ones((2)), # left toe a and b
+                                      1*np.ones((4)), # left hand
+                                      1*np.ones((4)), # right hip
+                                    #   1*np.ones((2)), # right toe a and b
+                                      1*np.ones((4))]) # right hand
+        configuration_cost = cp.sum_squares((self.vddq[self.dq_act_idx] - self.pdesddq))
 
         # Define the weight matrix for task output deviation
-        W1 = np.diag([1,1,10,10,10]) # base orientation roll, pitch, com acceleration z, swing foot orientation roll, pitch
+        W1 = 1.0*np.diag([50,50,50,50,50,10,10]) # base orientation roll, pitch, com acceleration z, swing foot orientation roll, pitch
 
         # Calculate the task output deviation cost component
-        term_A = self._getTaskOutput_ddh()[[0, 1, 5, 6, 7]]
-        term_B = self.pdesddh[[0, 1, 5, 6, 7]]
-        task_output_deviation_cost = cp.sum_squares(W1 @ (term_A - term_B))
+        term_A = self._getTaskOutput_ddh()[[0, 1, 3, 4, 5, 6, 7]]
+        term_B = self.pdesddh[[0, 1, 3, 4, 5, 6, 7]]
+        task_output_deviation_cost = cp.sum_squares( W1 @ (term_A - term_B))
 
         # Calculate the control effort cost component
         control_effort_cost = cp.sum_squares(self.vu)
 
         # Combine all cost components into the total objective
-        total_cost = (100*task_output_deviation_cost +
+        total_cost = (1*task_output_deviation_cost +
                     1 * control_effort_cost +
-                    2 * centroidal_momentum_cost +
-                    5*configuration_cost)
+                    5 * centroidal_momentum_cost +
+                    1*configuration_cost)
 
         objective = cp.Minimize(total_cost)
 
@@ -176,18 +191,21 @@ class PWQP():
         
         T_SwF, V_SwF, T_StF, _ = self.extractAndSetParameters()
         
-        kp = 1000
+        kp = 10
         kd = 2*np.sqrt(kp)
-        self.pdesddq.value = (self.ddq_actuated_des[self.qIindices] - kp*(q[self.q_act_idx] - self.q_actuated_des[self.qIindices]) - kd*(dq[self.dq_act_idx] - self.dq_actuated_des[self.qIindices])).reshape((18,1))
+        self.pdesddq.value = (self.ddq_actuated_des[self.qIindices] - kp*(q[self.q_act_idx] - self.q_actuated_des[self.qIindices]) - kd*(dq[self.dq_act_idx] - self.dq_actuated_des[self.qIindices])).reshape((self.n_u-len(self.exclude_list),1))
         
         yawStF = np.arctan2(T_StF[1,0],T_StF[0,0])
         self.R2StF.value = np.array([[np.cos(yawStF),-np.sin(yawStF)],[np.sin(yawStF),np.cos(yawStF)]]).T
+        
+        yawSwF = np.arctan2(T_SwF[1,0],T_SwF[0,0])
+        self.R2SwF.value = np.array([[np.cos(yawSwF),-np.sin(yawSwF)],[np.sin(yawSwF),np.cos(yawSwF)]]).T
         
         # Calculate desired base orientation and swing foot orientation errors
         Oebase, dOebase, OeSwF, dOeSwF = self.calculateOrientationErrors(T_SwF, V_SwF, q, dq)
         
         # Compute desired dynamics (shape, velocity, and acceleration) errors
-        e, de, hdd_desired = self.computeDynamicsErrors(self.com_height, Oebase, dOebase, OeSwF, dOeSwF)
+        e, de, hdd_desired = self.computeDynamicsErrors(Oebase, dOebase, OeSwF, dOeSwF)
 
         # Apply control law to adjust for errors
         self._applyControlLaw(e, de, hdd_desired)
@@ -230,9 +248,11 @@ class PWQP():
         quat_desSwF = quaternion.Quaternion(matrix=desired_swf_orientation)
         quat_SwF = quaternion.Quaternion(matrix=T_SwF[0:3, 0:3])
         OeSwF = self.QuatOriError(quat_desSwF.q, quat_SwF.q)
-
+        Oebase = np.zeros((3,1))
+        
         # Calculate the derivative of the swing foot orientation error
         dOeSwF = V_SwF[0:3] - np.array([[0, 0, 0]]).T
+        dOebase = np.zeros((3,1))
 
         return Oebase, dOebase, OeSwF, dOeSwF
     
@@ -266,7 +286,7 @@ class PWQP():
 
         return h
     
-    def computeDynamicsErrors(self, des_comz, Oebase, dOebase, OeSwF, dOeSwF):
+    def computeDynamicsErrors(self, Oebase, dOebase, OeSwF, dOeSwF):
         """
         Computes the dynamics errors for the control system, including shape (position) and velocity errors.
 
@@ -296,14 +316,14 @@ class PWQP():
         # Constructing the current state vectors for position and velocity
         current_shape_vector = np.block([
             [Oebase.reshape((3, 1))],  # Current base orientation error
-            [-np.array([[0.0, 0.0, des_comz]]).T + Pcom],  # Current COM position error
+            [-self.des_com_pos.reshape((3,1)) + Pcom],  # Current COM position error
             [OeSwF.reshape((3, 1))],  # Current swing foot orientation error
             [PSwF.reshape((3, 1))]  # Current swing foot position error
         ])
 
         current_velocity_vector = np.block([
             [dOebase.reshape((3, 1))],  # Current base orientation velocity
-            [-np.array([[0.0, 0.0, 0]]).T + Vcom],  # Current COM velocity
+            [-self.des_com_vel.reshape((3,1)) + Vcom],  # Current COM velocity
             [dOeSwF.reshape((3, 1))],  # Current swing foot orientation velocity
             [VSwF.reshape((3, 1))]  # Current swing foot velocity
         ])
@@ -368,10 +388,12 @@ class PWQP():
 
         return T_SwF, V_SwF, T_StF, V_StF
     
-    def set_desired_arm_q(self, q_actuated_des, dq_actuated_des, ddq_actuated_des):
+    def set_desired_arm_q(self, q_actuated_des, dq_actuated_des, ddq_actuated_des, des_com_pos = np.array([0.05, 0.0, 0.9]), des_com_vel = np.array([0.0, 0.0, 0.0])):
         self.q_actuated_des = q_actuated_des
         self.dq_actuated_des = dq_actuated_des
         self.ddq_actuated_des = ddq_actuated_des
+        self.des_com_pos = des_com_pos
+        self.des_com_vel = des_com_vel
     
     def QuatOriError(self, desQuat, curQuat):
         q_d = quaternion.Quaternion(desQuat)

@@ -1,6 +1,5 @@
 import time
 
-import keyboard
 import numpy as np
 import mujoco
 import mujoco.viewer
@@ -10,23 +9,17 @@ from cWBQP2 import PWQP, ControllerStance
 from GaitDataLoader import GaitDataLoader
 
 class DigitSimulation:
-    STANDING = np.array([0.0925871, 0.00188222, 0.967813, 0.999743, -0.000163863, 0.022431, 0.00340185, 0.331981, -0.00526764, 0.176355, 0.996243, -0.00335789, 0.000744049, 0.086534, 0.186855, -0.0140027, -0.137506, -0.0115589, -0.0529604, 0.974014, 0.224951, 0.00557492, 0.0257316, 0.0505937, 0.744686, -0.667007, 0.0160935, -0.0169332, 0.072832, -0.0478979, -0.106145, 0.894838, -0.00278591, 0.344714, -0.331981, 0.00526582, -0.176342, 0.996239, 0.00337517, 0.000743736, -0.0865791, -0.186917, 0.0139709, 0.137658, 0.0115404, 0.0529809, 0.974041, -0.224834, 0.00558042, -0.0257484, -0.0505853, 0.744537, 0.667173, 0.0160876, 0.0169263, -0.0728824, 0.0482856, 0.106047, -0.894876, 0.00300412, -0.344657])
     MODEL_FILE = 'models/digit-v3.xml'
     DATA_FILE = 'Digit-data_12699.mat'
-    q_actuated = [7, 8, 9, 10, # left leg
-            14, 15, # left toe A and B
-            18, 19, 20, 21, # left hand
-            22, 23, 24, 25, # right leg
-            29, 30, # right toe A and B
-            33, 34, 35, 36] # right hand
+    DOUBLE_STANCE = False
     
     def __init__(self):
-        self.unpause = False
         self.model = mujoco.MjModel.from_xml_path(self.MODEL_FILE)
         self.data = mujoco.MjData(self.model)
         self.viewer = mujoco.viewer.launch_passive(self.model, self.data)
-        self.viewer.cam.distance = 5
-        self.viewer.cam.azimuth = 120
+        self.viewer.cam.distance = 3
+        self.viewer.cam.azimuth = 180
+        self.viewer.cam.elevation = -20
         self.gait_data_loader = GaitDataLoader(self.DATA_FILE)
         self.initialize_simulation()
     
@@ -58,32 +51,32 @@ class DigitSimulation:
 
     def setup_qp(self):
         com_height = self.data.subtree_com[0, 2]
-        self.rightStanceQP = PWQP(ControllerStance.RIGHT_STANCE, com_height)
-        # self.leftStanceQP = PWQP(ControllerStance.LEFT_STANCE, com_height)
+        self.rightStanceQP = PWQP(ControllerStance.RIGHT_STANCE, self.DOUBLE_STANCE)
+        self.leftStanceQP = PWQP(ControllerStance.LEFT_STANCE, self.DOUBLE_STANCE)
         self.ctrl = np.zeros(self.model.nu)
 
     def solve_qp(self):
         self.s = np.min([(self.data.time-self.last_impact_time)/self.t_step,1.0])
-        # self.s = 0.0
         q, dq, _ = self.getReducedState()
                 
         try:
             if self.state == ControllerStance.RIGHT_STANCE.name:
                 self.rightStanceQP.Dcf.set_state(q, dq)
                 q_actuated_des, dq_actuated_des, ddq_actuated_des = self.get_desired_actuated_configuration(self.s)
+                des_com_pos, des_com_vel = self.gait_data_loader.getCOMTrajectory(self.s)
                 # q_actuated_des = self.rightStanceQP.Dcf.get_actuated_q()
-                # q_pos = self.data.qpos[self.q_i]
-                # q_actuated_des = q_pos[self.q_actuated]
                 # dq_actuated_des = np.zeros_like(q_actuated_des)
                 # ddq_actuated_des = np.zeros_like(q_actuated_des)
-                self.rightStanceQP.set_desired_arm_q(q_actuated_des, dq_actuated_des, ddq_actuated_des)
+                # des_com_pos = np.array([0.05, 0.0, 0.9])
+                # des_com_vel = np.array([0.0, 0.0, 0.0])
+                self.rightStanceQP.set_desired_arm_q(q_actuated_des, dq_actuated_des, ddq_actuated_des, des_com_pos, des_com_vel)
                 self.ctrl = self.rightStanceQP.WalkingQP()
-            # elif self.state == ControllerStance.LEFT_STANCE.name:
-            #     self.leftStanceQP.Dcf.set_state(q, dq)
-            #     q_actuated_des, dq_actuated_des, ddq_actuated_des = self.get_desired_actuated_configuration(self.s)
-            #     self.leftStanceQP.set_desired_arm_q(q_actuated_des, dq_actuated_des, ddq_actuated_des)
-            #     self.ctrl = self.leftStanceQP.WalkingQP()
-            print('QP success')
+            elif self.state == ControllerStance.LEFT_STANCE.name:
+                self.leftStanceQP.Dcf.set_state(q, dq)
+                q_actuated_des, dq_actuated_des, ddq_actuated_des = self.get_desired_actuated_configuration(self.s)
+                des_com_pos, des_com_vel = self.gait_data_loader.getCOMTrajectory(self.s)
+                self.leftStanceQP.set_desired_arm_q(q_actuated_des, dq_actuated_des, ddq_actuated_des, des_com_pos, des_com_vel)
+                self.ctrl = self.leftStanceQP.WalkingQP()
         except:
             print('QP failed')
             
@@ -120,8 +113,7 @@ class DigitSimulation:
             self.data.ctrl = self.solve_qp()
             mujoco.mj_step(self.model, self.data, nstep=15)
             # self.foot_switching_algo()
-                # self.unpause = True
-
+                
             self.sync_viewer(step_start)
 
     def sync_viewer(self, step_start):
