@@ -1,4 +1,5 @@
 from enum import Enum, auto
+import csv
 
 import numpy as np
 import cvxpy as cp
@@ -18,6 +19,9 @@ class PWQP():
         self.Dcf = DigitCasadiWrapper()
         self.doubleStance = doubleStance
         self.totM = 47.925414
+        
+        self.csvfile = open('output.csv', 'w', newline='')
+        self.csvwriter = csv.writer(self.csvfile)
         
         self.n_ddq = 36
         self.n_u = 20
@@ -61,10 +65,7 @@ class PWQP():
         self.B = self.Dcf.get_B_matrix()
         self.vu_limit = self.Dcf.get_u_limit().reshape((self.n_u,1))
         
-        if self.stance == ControllerStance.RIGHT_STANCE:
-            self.exclude_list = [4, 5, 14, 15]
-        else:
-            self.exclude_list = [4, 5, 14, 15]
+        self.exclude_list = [4, 5, 14, 15] #exclude toe joints
         
         q_act_idx, dq_act_idx = self.Dcf.get_actuated_indices()
         self.q_act_idx = self.exclude_swing_foot_indices(q_act_idx, self.exclude_list)
@@ -148,36 +149,34 @@ class PWQP():
         # Calculate the centroidal momentum cost component
         centroidal_momentum_cost = cp.sum_squares(self.pAG[0:3, :] @ self.vddq + self.pdAGdq[0:3] - self.pdesdhG)
         
-        # Calculate the configuration cost component for specified joints
+        # Calculate the configuration cost component for actuated joints
         if self.stance == ControllerStance.RIGHT_STANCE:
-            wConfig = np.concatenate([1*np.ones((4)), # left hip
-                                    #   0.1*np.ones((2)), # left toe a and b
-                                      1*np.ones((4)), # left hand
-                                      1*np.ones((4)), # right hip
-                                    #   1*np.ones((2)), # right toe a and b
-                                      1*np.ones((4))]) # right hand
-        else:
-            wConfig = np.concatenate([1*np.ones((4)), # left hip
-                                    #   0.1*np.ones((2)), # left toe a and b
-                                      1*np.ones((4)), # left hand
-                                      1*np.ones((4)), # right hip
-                                    #   1*np.ones((2)), # right toe a and b
-                                      1*np.ones((4))]) # right hand
-        configuration_cost = cp.sum_squares((self.vddq[self.dq_act_idx] - self.pdesddq))
+            w2 = np.diag([100, 100, 100, 5, # left hip
+                          5, 5, 5, 5, # left hand
+                          5, 5, 5, 5, # right hip
+                          5, 5, 5, 5]) # right hand
+        elif self.stance == ControllerStance.LEFT_STANCE:
+            w2 = np.diag([5, 5, 5, 5, # left hip
+                          5, 5, 5, 5, # left hand
+                          100, 100, 100, 5, # right hip
+                          5, 5, 5, 5]) # right hand
+        configuration_cost = cp.sum_squares(w2 @ (self.vddq[self.dq_act_idx] - self.pdesddq))
 
         # Define the weight matrix for task output deviation
-        W1 = 1.0*np.diag([50,50,50,50,50,10,10]) # base orientation roll, pitch, com acceleration z, swing foot orientation roll, pitch
+        W1 = np.diag([100,100,10, #  base orientation x, y, z
+                      100,100,1000, #  com position x, y, z
+                      1000,1000,1000]) # swing foot orientation roll, pitch, yaw
 
         # Calculate the task output deviation cost component
-        term_A = self._getTaskOutput_ddh()[[0, 1, 3, 4, 5, 6, 7]]
-        term_B = self.pdesddh[[0, 1, 3, 4, 5, 6, 7]]
+        term_A = self._getTaskOutput_ddh()[[0, 1, 2, 3, 4, 5, 6, 7, 8]]
+        term_B = self.pdesddh[[0, 1, 2, 3, 4, 5, 6, 7, 8]]
         task_output_deviation_cost = cp.sum_squares( W1 @ (term_A - term_B))
 
         # Calculate the control effort cost component
         control_effort_cost = cp.sum_squares(self.vu)
 
         # Combine all cost components into the total objective
-        total_cost = (1*task_output_deviation_cost +
+        total_cost = (task_output_deviation_cost +
                     1 * control_effort_cost +
                     5 * centroidal_momentum_cost +
                     1*configuration_cost)
@@ -191,7 +190,7 @@ class PWQP():
         
         T_SwF, V_SwF, T_StF, _ = self.extractAndSetParameters()
         
-        kp = 10
+        kp = 80
         kd = 2*np.sqrt(kp)
         self.pdesddq.value = (self.ddq_actuated_des[self.qIindices] - kp*(q[self.q_act_idx] - self.q_actuated_des[self.qIindices]) - kd*(dq[self.dq_act_idx] - self.dq_actuated_des[self.qIindices])).reshape((self.n_u-len(self.exclude_list),1))
         
@@ -246,13 +245,13 @@ class PWQP():
         # Calculate the orientation error for the swing foot
         desired_swf_orientation = self.zero_roll_pitch(T_SwF[0:3, 0:3])
         quat_desSwF = quaternion.Quaternion(matrix=desired_swf_orientation)
+        # quat_desSwF = quaternion.Quaternion(axis=[0, 0, 1], angle=0.0)              #comment
         quat_SwF = quaternion.Quaternion(matrix=T_SwF[0:3, 0:3])
         OeSwF = self.QuatOriError(quat_desSwF.q, quat_SwF.q)
-        Oebase = np.zeros((3,1))
+        # OeSwF = np.array([0, 0, 0]) #comment
         
         # Calculate the derivative of the swing foot orientation error
         dOeSwF = V_SwF[0:3] - np.array([[0, 0, 0]]).T
-        dOebase = np.zeros((3,1))
 
         return Oebase, dOebase, OeSwF, dOeSwF
     
@@ -331,7 +330,7 @@ class PWQP():
         # Calculate shape (position) and velocity errors
         e = desired_shape_vector - current_shape_vector
         de = desired_velocity_vector - current_velocity_vector
-
+                
         return e, de, hdd_desired
     
     def _applyControlLaw(self, e, de, hdd_desired):
@@ -344,12 +343,14 @@ class PWQP():
         """
         # Proportional and derivative gains, defined or calculated elsewhere
         # Here, they are assumed to be class attributes or have been set prior to this method call
-        kd = 10*np.diag([1,1,0.9,2,2,2,10,10,10,5,5,3])
+        kd = np.diag([20,20,20,20,20,20,20,20,20,1,1,1])
         kp = (kd/2)**2
         
         # Compute control inputs based on PD control law
         # The control inputs are the desired accelerations to correct position and velocity errors
         self.pdesddh.value = hdd_desired.reshape((12,1)) + kp @ e.reshape((12,1)) + kd @ de.reshape((12,1))
+        
+        self.csvwriter.writerow(e.squeeze())
     
     def extractAndSetParameters(self):
         """Extracts parameters from the model and sets Jacobians based on the swing foot."""
@@ -432,3 +433,6 @@ class PWQP():
     def SwFspring(self, q):
         # Calculate swing foot spring deflection
         return 0.0
+    
+    def __del__(self) -> None:
+        self.csvfile.close()
