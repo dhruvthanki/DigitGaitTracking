@@ -166,7 +166,8 @@ class PWQP():
         W1 = np.diag([100,10,
                     #   10, #  base orientation x, y, z
                     #   10,
-                      100,100, #  com position x, y, z
+                    #   100,
+                      100, #  com position x, y, z
                       100,100])
                     #   ,10]) # swing foot orientation roll, pitch, yaw
 
@@ -174,13 +175,15 @@ class PWQP():
         term_A = self._getTaskOutput_ddh()[[0, 1,
                                             # 2, 
                                             # 3, 
-                                            4, 5, 
+                                            # 4,
+                                            5, 
                                             6, 7]]
                                             # , 8]]
         term_B = self.pdesddh[[0, 1,
                             #    2, 
                             #    3, 
-                               4, 5, 
+                            #    4, 
+                               5, 
                                6, 7]]
                             #    , 8]]
         task_output_deviation_cost = cp.sum_squares( W1 @ (term_A - term_B))
@@ -358,7 +361,7 @@ class PWQP():
         # Here, they are assumed to be class attributes or have been set prior to this method call
         kd = np.diag([20,20,20,
                       20,20,20,
-                      20,20,20,
+                      100,100,100,
                       1,1,1])
         kp = (kd/2)**2
         
