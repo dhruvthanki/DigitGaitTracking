@@ -137,9 +137,11 @@ if __name__ == '__main__':
     qpos, qvel,qacc = gait_data_loader.evaluate_bezier_curve(0.0)
     print(qvel)
     
-    plot_bezier_curve_with_derivatives(gait_data_loader.com_x_bezier_alpha, gait_data_loader.p_com[0, :], gait_data_loader.p_com.shape[1])
-    plot_bezier_curve_with_derivatives(gait_data_loader.com_y_bezier_alpha, gait_data_loader.p_com[1, :], gait_data_loader.p_com.shape[1])
-    plot_bezier_curve_with_derivatives(gait_data_loader.com_z_bezier_alpha, gait_data_loader.p_com[2, :], gait_data_loader.p_com.shape[1])
+    plot_bezier_curve_with_derivatives(gait_data_loader.alpha[3,:], gait_data_loader.p_com[0, :], gait_data_loader.p_com.shape[1])
+    
+    # plot_bezier_curve_with_derivatives(gait_data_loader.com_x_bezier_alpha, gait_data_loader.p_com[0, :], gait_data_loader.p_com.shape[1])
+    # plot_bezier_curve_with_derivatives(gait_data_loader.com_y_bezier_alpha, gait_data_loader.p_com[1, :], gait_data_loader.p_com.shape[1])
+    # plot_bezier_curve_with_derivatives(gait_data_loader.com_z_bezier_alpha, gait_data_loader.p_com[2, :], gait_data_loader.p_com.shape[1])
     
     t_values = np.linspace(0, 1, gait_data_loader.p_com.shape[1])
     curve_valuesX = [GaitDataLoader.bezier_curve(0, t, gait_data_loader.com_x_bezier_alpha) for t in t_values]

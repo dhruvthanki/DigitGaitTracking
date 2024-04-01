@@ -86,7 +86,7 @@ class DigitSimulation:
                     des_com_pos = np.array([0.05, 0.0, 0.9])
                     des_com_vel = np.array([0.0, 0.0, 0.0])
                 else:
-                    q_actuated_des, dq_actuated_des, ddq_actuated_des = self.get_desired_actuated_configuration(1.0)
+                    q_actuated_des, dq_actuated_des, ddq_actuated_des = self.get_desired_actuated_configuration(self.s)
                     q_actuated_des[6:10] = np.array([-0.106145, 0.894838, -0.00278591, 0.344714])
                     q_actuated_des[16:20] = np.array([0.106047, -0.894876, 0.00300412, -0.344657])
                     dq_actuated_des[6:10] = np.array([0.0, 0.0, 0.0, 0.0])

@@ -166,9 +166,9 @@ class PWQP():
         W1 = np.diag([100,10,
                     #   10, #  base orientation x, y, z
                     #   10,
-                    #   100,
+                      100,
                       100 #  com position x, y, z
-                    #   ,100,100
+                      ,1000,100
                       ])
                     #   ,10]) # swing foot orientation roll, pitch, yaw
 
@@ -176,17 +176,17 @@ class PWQP():
         term_A = self._getTaskOutput_ddh()[[0, 1,
                                             # 2, 
                                             # 3, 
-                                            # 4,
+                                            4,
                                             5
-                                            # ,6, 7
+                                            ,6, 7
                                             ]]
                                             # , 8]]
         term_B = self.pdesddh[[0, 1,
                             #    2, 
                             #    3, 
-                            #    4, 
+                               4, 
                                5
-                            #    ,6, 7
+                               ,6, 7
                                ]]
                             #    , 8]]
         task_output_deviation_cost = cp.sum_squares( W1 @ (term_A - term_B))
@@ -209,10 +209,10 @@ class PWQP():
         
         T_SwF, V_SwF, T_StF, _ = self.extractAndSetParameters()
         
-        kp = 0.1*np.diag([100, 100, 1000, 1000, # left hip
-                      100, 100, 100, 100, # left hand
-                      100, 100, 100, 100, # right hip
-                      100, 100, 100, 100]) # right hand
+        kp = np.diag([10, 10, 10, 10, # left hip
+                      10, 10, 10, 10, # left hand
+                      10, 10, 10, 10, # right hip
+                      10, 10, 10, 10]) # right hand
         kd = 2*np.sqrt(kp)
         self.pdesddq.value = (self.ddq_actuated_des[self.qIindices] - kp @ (q[self.q_act_idx] - self.q_actuated_des[self.qIindices]) - kd @ (dq[self.dq_act_idx] - self.dq_actuated_des[self.qIindices])).reshape((self.n_u-len(self.exclude_list),1))
         
