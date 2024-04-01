@@ -1,0 +1,4 @@
+[submodule "submodules/CommonPlace"]
+	path = submodules/CommonPlace
+	url = https://github.com/UD-Robotic-Locomotion-Lab/CommonPlace.git
+	branch = mpcc-model

@@ -151,7 +151,7 @@ class PWQP():
         
         # Calculate the configuration cost component for actuated joints
         if self.stance == ControllerStance.RIGHT_STANCE:
-            w2 = np.diag([10, 10, 10, 30, # left hip
+            w2 = np.diag([10, 10, 20, 60, # left hip
                           5, 5, 5, 5, # left hand
                           10, 10, 10, 5, # right hip
                           5, 5, 5, 5]) # right hand
@@ -167,8 +167,9 @@ class PWQP():
                     #   10, #  base orientation x, y, z
                     #   10,
                     #   100,
-                      100, #  com position x, y, z
-                      100,100])
+                      100 #  com position x, y, z
+                    #   ,100,100
+                      ])
                     #   ,10]) # swing foot orientation roll, pitch, yaw
 
         # Calculate the task output deviation cost component
@@ -176,15 +177,17 @@ class PWQP():
                                             # 2, 
                                             # 3, 
                                             # 4,
-                                            5, 
-                                            6, 7]]
+                                            5
+                                            # ,6, 7
+                                            ]]
                                             # , 8]]
         term_B = self.pdesddh[[0, 1,
                             #    2, 
                             #    3, 
                             #    4, 
-                               5, 
-                               6, 7]]
+                               5
+                            #    ,6, 7
+                               ]]
                             #    , 8]]
         task_output_deviation_cost = cp.sum_squares( W1 @ (term_A - term_B))
 
@@ -206,9 +209,12 @@ class PWQP():
         
         T_SwF, V_SwF, T_StF, _ = self.extractAndSetParameters()
         
-        kp = 100
+        kp = 0.1*np.diag([100, 100, 1000, 1000, # left hip
+                      100, 100, 100, 100, # left hand
+                      100, 100, 100, 100, # right hip
+                      100, 100, 100, 100]) # right hand
         kd = 2*np.sqrt(kp)
-        self.pdesddq.value = (self.ddq_actuated_des[self.qIindices] - kp*(q[self.q_act_idx] - self.q_actuated_des[self.qIindices]) - kd*(dq[self.dq_act_idx] - self.dq_actuated_des[self.qIindices])).reshape((self.n_u-len(self.exclude_list),1))
+        self.pdesddq.value = (self.ddq_actuated_des[self.qIindices] - kp @ (q[self.q_act_idx] - self.q_actuated_des[self.qIindices]) - kd @ (dq[self.dq_act_idx] - self.dq_actuated_des[self.qIindices])).reshape((self.n_u-len(self.exclude_list),1))
         
         yawStF = np.arctan2(T_StF[1,0],T_StF[0,0])
         self.R2StF.value = np.array([[np.cos(yawStF),-np.sin(yawStF)],[np.sin(yawStF),np.cos(yawStF)]]).T
@@ -228,7 +234,8 @@ class PWQP():
         # Solve the Walking QP
         self.WalkingProb.solve(warm_start=True, solver=cp.ECOS, verbose=False)
         # print(f"optimal value with ECOS: {self.WalkingProb.value}")
-
+        
+        return self.pdesddq.value.squeeze()
         return self.vu.value.squeeze()
     
     def calculateOrientationErrors(self, T_SwF, V_SwF, q, dq):
