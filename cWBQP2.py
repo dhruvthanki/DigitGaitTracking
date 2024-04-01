@@ -235,7 +235,7 @@ class PWQP():
         self.WalkingProb.solve(warm_start=True, solver=cp.ECOS, verbose=False)
         # print(f"optimal value with ECOS: {self.WalkingProb.value}")
         
-        return self.pdesddq.value.squeeze()
+        # return self.pdesddq.value.squeeze()
         return self.vu.value.squeeze()
     
     def calculateOrientationErrors(self, T_SwF, V_SwF, q, dq):

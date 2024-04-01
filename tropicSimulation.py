@@ -100,10 +100,10 @@ class DigitSimulation:
                 #     self.stored_ctrl = np.vstack((self.stored_ctrl, self.ctrl))
                 #     self.stored_data.append(copy.deepcopy(self.data))
                 self.rightStanceQP.set_desired_arm_q(q_actuated_des, dq_actuated_des, ddq_actuated_des, des_com_pos, des_com_vel)
-                localCtrl = self.rightStanceQP.WalkingQP()
-                localCtrl = np.insert(localCtrl, 4, [0.0, 0.0])
-                localCtrl = np.insert(localCtrl, 14, [0.0, 0.0])
-                self.ctrl = localCtrl
+                self.ctrl = self.rightStanceQP.WalkingQP()
+                # localCtrl = np.insert(localCtrl, 4, [0.0, 0.0])
+                # localCtrl = np.insert(localCtrl, 14, [0.0, 0.0])
+                # self.ctrl = localCtrl
             elif self.state == ControllerStance.LEFT_STANCE.name:
                 self.leftStanceQP.Dcf.set_state(q, dq)
                 q_actuated_des, dq_actuated_des, ddq_actuated_des = self.get_desired_actuated_configuration(self.s)

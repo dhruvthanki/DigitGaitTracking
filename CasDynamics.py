@@ -1,7 +1,7 @@
 import numpy as np
 
 import os, sys
-sys.path.append(os.path.abspath('/home/dhruv/Documents/Github/CommonPlace/DigitModel/CasadiFunctions'))
+sys.path.append(os.path.abspath('submodules/CommonPlace/DigitModel/CasadiFunctions'))
 from C_DigitCasadiFuncs import DigitCasFunc
 
 class DigitCasadiWrapper:
