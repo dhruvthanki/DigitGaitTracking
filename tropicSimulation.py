@@ -57,6 +57,7 @@ class DigitSimulation:
         # else:
         self.data.qpos = self.model.key_qpos
         self.data.qvel = np.zeros_like(self.data.qvel)
+        self.data.qvel[0] = 1.0
         mujoco.mj_forward(self.model, self.data)
 
     def setup_qp(self):
@@ -69,7 +70,7 @@ class DigitSimulation:
         self.ctrl = np.zeros(self.model.nu)
 
     def solve_qp(self):
-        self.s = np.min([(self.data.time-self.last_impact_time)/self.t_step,1.0])
+        
         q, dq, _ = self.getReducedState()
         
         if self.s > 1.0:
@@ -85,7 +86,7 @@ class DigitSimulation:
                     des_com_pos = np.array([0.05, 0.0, 0.9])
                     des_com_vel = np.array([0.0, 0.0, 0.0])
                 else:
-                    q_actuated_des, dq_actuated_des, ddq_actuated_des = self.get_desired_actuated_configuration(self.s)
+                    q_actuated_des, dq_actuated_des, ddq_actuated_des = self.get_desired_actuated_configuration(1.0)
                     q_actuated_des[6:10] = np.array([-0.106145, 0.894838, -0.00278591, 0.344714])
                     q_actuated_des[16:20] = np.array([0.106047, -0.894876, 0.00300412, -0.344657])
                     dq_actuated_des[6:10] = np.array([0.0, 0.0, 0.0, 0.0])
@@ -93,11 +94,11 @@ class DigitSimulation:
                     ddq_actuated_des[6:10] = np.array([0.0, 0.0, 0.0, 0.0])
                     ddq_actuated_des[16:20] = np.array([0.0, 0.0, 0.0, 0.0])
                     des_com_pos, des_com_vel = self.gait_data_loader.getCOMTrajectory(self.s)
-                if self.s <= 1.0 and self.s >= 0.0:
-                    self.stored_desired.append(q_actuated_des)
-                    self.stored_time.append(self.data.time)
-                    self.stored_ctrl = np.vstack((self.stored_ctrl, self.ctrl))
-                    self.stored_data.append(copy.deepcopy(self.data))
+                # if self.s <= 1.0 and self.s >= 0.0:
+                #     self.stored_desired.append(q_actuated_des)
+                #     self.stored_time.append(self.data.time)
+                #     self.stored_ctrl = np.vstack((self.stored_ctrl, self.ctrl))
+                #     self.stored_data.append(copy.deepcopy(self.data))
                 self.rightStanceQP.set_desired_arm_q(q_actuated_des, dq_actuated_des, ddq_actuated_des, des_com_pos, des_com_vel)
                 self.ctrl = self.rightStanceQP.WalkingQP()
             elif self.state == ControllerStance.LEFT_STANCE.name:
@@ -145,12 +146,15 @@ class DigitSimulation:
         while self.viewer.is_running():
             step_start = time.time()
             
-            self.data.ctrl = self.solve_qp()
-            mujoco.mj_step(self.model, self.data, nstep=15)
-            if not self.DOUBLE_STANCE:
-                impact_detected = self.foot_switching_algo()
-            if math.isclose(self.s, 1.0, rel_tol=1e-9, abs_tol=0.0):
-                break
+            self.s = np.min([(self.data.time-self.last_impact_time)/self.t_step,1.0])
+            
+            if self.s < 1.0:
+                self.data.ctrl = self.solve_qp()
+                mujoco.mj_step(self.model, self.data, nstep=15)
+            # if not self.DOUBLE_STANCE:
+            #     impact_detected = self.foot_switching_algo()
+            # if math.isclose(self.s, 1.0, rel_tol=1e-9, abs_tol=0.0):
+            #     break
                 
             self.sync_viewer(step_start)
 
@@ -178,15 +182,15 @@ if __name__ == "__main__":
     # with open('my_list.pkl', 'wb') as file:
     #     pickle.dump(data_to_store, file)
     
-    import matplotlib.pyplot as plt
+    # import matplotlib.pyplot as plt
     # plt.plot(digitSimulation.stored_time, digitSimulation.stored_data)
     
     # plt.plot(digitSimulation.stored_time, digitSimulation.stored_ctrl[1:,0])
     # plt.plot(digitSimulation.stored_time, digitSimulation.stored_ctrl[1:,1])
     # plt.plot(digitSimulation.stored_time, digitSimulation.stored_ctrl[1:,2])
     # plt.plot(digitSimulation.stored_time, digitSimulation.stored_ctrl[1:,3])
-    plt.plot(digitSimulation.stored_time, digitSimulation.stored_ctrl[1:,4])
-    plt.plot(digitSimulation.stored_time, digitSimulation.stored_ctrl[1:,5])
+    # plt.plot(digitSimulation.stored_time, digitSimulation.stored_ctrl[1:,4])
+    # plt.plot(digitSimulation.stored_time, digitSimulation.stored_ctrl[1:,5])
     # plt.plot(digitSimulation.stored_time, digitSimulation.stored_ctrl[1:,6])
     # plt.plot(digitSimulation.stored_time, digitSimulation.stored_ctrl[1:,7])
     # plt.plot(digitSimulation.stored_time, digitSimulation.stored_ctrl[1:,8])
@@ -202,6 +206,6 @@ if __name__ == "__main__":
     # plt.plot(digitSimulation.stored_time, digitSimulation.stored_ctrl[1:,18])
     # plt.plot(digitSimulation.stored_time, digitSimulation.stored_ctrl[1:,19])
     # plt.legend(['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19'])
-    plt.xlim([0, 0.5])
-    plt.ylim([-0.9, 0.9])
-    plt.show()
+    # plt.xlim([0, 0.5])
+    # plt.ylim([-0.9, 0.9])
+    # plt.show()

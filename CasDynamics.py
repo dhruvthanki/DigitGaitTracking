@@ -104,6 +104,9 @@ class DigitCasadiWrapper:
         self.u_limit = np.array([[1.4,   1.4,  12.5,  12.5,   0.9,   0.9,   1.4,   1.4,   1.4,
                           1.4,   1.4,   1.4,  12.5,  12.5,   0.9,   0.9,   1.4,   1.4,
                           1.4,   1.4]]).T
+        # self.u_limit = np.array([[1.4,   1.4,  12.5,  12.5,   0.9,   0.9,   1.4,   1.4,   1.4,
+        #                   1.4,   1.4,   1.4,  12.5,  9,   0.5,   0.5,   1.4,   1.4,
+        #                   1.4,   1.4]]).T
         return self.u_limit
         
     def set_u_limit(self, u_limit):
