@@ -156,9 +156,9 @@ class PWQP():
                           10, 10, 10, 5, # right hip
                           5, 5, 5, 5]) # right hand
         elif self.stance == ControllerStance.LEFT_STANCE:
-            w2 = np.diag([5, 5, 5, 5, # left hip
+            w2 = np.diag([10, 10, 10, 5, # left hip
                           5, 5, 5, 5, # left hand
-                          100, 100, 100, 5, # right hip
+                          10, 10, 20, 60, # right hip
                           5, 5, 5, 5]) # right hand
         configuration_cost = cp.sum_squares(w2 @ (self.vddq[self.dq_act_idx] - self.pdesddq))
 
@@ -166,7 +166,7 @@ class PWQP():
         W1 = np.diag([100,10,
                     #   10, #  base orientation x, y, z
                     #   10,
-                      100,
+                    #   100,
                       100 #  com position x, y, z
                       ,1000,100
                       ])
@@ -176,7 +176,7 @@ class PWQP():
         term_A = self._getTaskOutput_ddh()[[0, 1,
                                             # 2, 
                                             # 3, 
-                                            4,
+                                            # 4,
                                             5
                                             ,6, 7
                                             ]]
@@ -184,7 +184,7 @@ class PWQP():
         term_B = self.pdesddh[[0, 1,
                             #    2, 
                             #    3, 
-                               4, 
+                            #    4, 
                                5
                                ,6, 7
                                ]]

@@ -16,6 +16,7 @@ class DigitSimulation:
     DOUBLE_STANCE = False
     
     def __init__(self):
+        self.impact_detected = False
         self.model = mujoco.MjModel.from_xml_path(self.MODEL_FILE)
         self.data = mujoco.MjData(self.model)
         self.viewer = mujoco.viewer.launch_passive(self.model, self.data)
@@ -83,8 +84,8 @@ class DigitSimulation:
                     q_actuated_des = self.rightStanceQP.Dcf.get_actuated_q()
                     dq_actuated_des = np.zeros_like(q_actuated_des)
                     ddq_actuated_des = np.zeros_like(q_actuated_des)
-                    des_com_pos = np.array([0.05, 0.0, 0.9])
-                    des_com_vel = np.array([0.0, 0.0, 0.0])
+                    # des_com_pos = np.array([0.05, 0.0, 0.9])
+                    # des_com_vel = np.array([0.0, 0.0, 0.0])
                 else:
                     q_actuated_des, dq_actuated_des, ddq_actuated_des = self.get_desired_actuated_configuration(self.s)
                     q_actuated_des[6:10] = np.array([-0.106145, 0.894838, -0.00278591, 0.344714])
@@ -93,22 +94,26 @@ class DigitSimulation:
                     dq_actuated_des[16:20] = np.array([0.0, 0.0, 0.0, 0.0])
                     ddq_actuated_des[6:10] = np.array([0.0, 0.0, 0.0, 0.0])
                     ddq_actuated_des[16:20] = np.array([0.0, 0.0, 0.0, 0.0])
-                    des_com_pos, des_com_vel = self.gait_data_loader.getCOMTrajectory(self.s)
+                    # des_com_pos, des_com_vel = self.gait_data_loader.getCOMTrajectory(self.s)
                 # if self.s <= 1.0 and self.s >= 0.0:
                 #     self.stored_desired.append(q_actuated_des)
                 #     self.stored_time.append(self.data.time)
                 #     self.stored_ctrl = np.vstack((self.stored_ctrl, self.ctrl))
                 #     self.stored_data.append(copy.deepcopy(self.data))
-                self.rightStanceQP.set_desired_arm_q(q_actuated_des, dq_actuated_des, ddq_actuated_des, des_com_pos, des_com_vel)
+                self.rightStanceQP.set_desired_arm_q(q_actuated_des, dq_actuated_des, ddq_actuated_des)
                 self.ctrl = self.rightStanceQP.WalkingQP()
-                # localCtrl = np.insert(localCtrl, 4, [0.0, 0.0])
-                # localCtrl = np.insert(localCtrl, 14, [0.0, 0.0])
-                # self.ctrl = localCtrl
+                
             elif self.state == ControllerStance.LEFT_STANCE.name:
                 self.leftStanceQP.Dcf.set_state(q, dq)
                 q_actuated_des, dq_actuated_des, ddq_actuated_des = self.get_desired_actuated_configuration(self.s)
-                des_com_pos, des_com_vel = self.gait_data_loader.getCOMTrajectory(self.s)
-                self.leftStanceQP.set_desired_arm_q(q_actuated_des, dq_actuated_des, ddq_actuated_des, des_com_pos, des_com_vel)
+                q_actuated_des[6:10] = np.array([-0.106145, 0.894838, -0.00278591, 0.344714])
+                q_actuated_des[16:20] = np.array([0.106047, -0.894876, 0.00300412, -0.344657])
+                dq_actuated_des[6:10] = np.array([0.0, 0.0, 0.0, 0.0])
+                dq_actuated_des[16:20] = np.array([0.0, 0.0, 0.0, 0.0])
+                ddq_actuated_des[6:10] = np.array([0.0, 0.0, 0.0, 0.0])
+                ddq_actuated_des[16:20] = np.array([0.0, 0.0, 0.0, 0.0])
+                # des_com_pos, des_com_vel = self.gait_data_loader.getCOMTrajectory(self.s)
+                self.leftStanceQP.set_desired_arm_q(q_actuated_des, dq_actuated_des, ddq_actuated_des)
                 self.ctrl = self.leftStanceQP.WalkingQP()
             # if self.state == ControllerStance.RIGHT_STANCE.name:
             #     self.ctrl[[4,5]] = 0.0
@@ -127,7 +132,12 @@ class DigitSimulation:
         if self.state == ControllerStance.RIGHT_STANCE.name:
             return self.gait_data_loader.evaluate_bezier_curve(phase)
         else:
-            return self.gait_data_loader.evaluate_bezier_curve_relabelled(phase)
+            relablling_idx = [10, 11, 12, 13, 14, 15, 
+                          6, 7, 8, 9, 
+                          0, 1, 2, 3, 4, 5, 
+                          16, 17, 18, 19]
+            q_des, dq_des, ddq_des = self.gait_data_loader.evaluate_bezier_curve(phase)
+            return q_des[relablling_idx], dq_des[relablling_idx], ddq_des[relablling_idx]
 
     def foot_switching_algo(self):
         q, _, _ = self.getReducedState()
@@ -138,8 +148,9 @@ class DigitSimulation:
             swingFootSpringDefection = self.rightStanceQP.SwFspring(q)
             T_SwFoot, _ = self.rightStanceQP.Dcf.get_pose_and_vel_for_site('left-foot')
         PSwFoot = T_SwFoot[:3, 3].reshape((3, 1))
-        if self.s >= 0.5 and (PSwFoot[2] < 1e-2 or swingFootSpringDefection > 0.01):
+        if self.s >= 0.5 and (PSwFoot[2] < 1e-2 or swingFootSpringDefection > 0.03):
             self.switch_stance()
+            print('Switching Stance')
             self.s = 0
             self.last_impact_time = self.data.time
             return True
@@ -151,11 +162,12 @@ class DigitSimulation:
             
             self.s = np.min([(self.data.time-self.last_impact_time)/self.t_step,1.0])
             
-            if self.s < 1.0:
-                self.data.ctrl = self.solve_qp()
-                mujoco.mj_step(self.model, self.data, nstep=15)
-            # if not self.DOUBLE_STANCE:
-            #     impact_detected = self.foot_switching_algo()
+            # if self.s < 1.0:
+            # if not self.impact_detected:
+            self.data.ctrl = self.solve_qp()
+            mujoco.mj_step(self.model, self.data, nstep=15)
+            if not self.DOUBLE_STANCE:
+                self.impact_detected = self.foot_switching_algo()
             # if math.isclose(self.s, 1.0, rel_tol=1e-9, abs_tol=0.0):
             #     break
                 
