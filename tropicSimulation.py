@@ -1,4 +1,5 @@
 import time
+import keyboard
 
 import numpy as np
 import mujoco
@@ -8,6 +9,16 @@ from transitions import Machine
 from cWBQP2 import PWQP, ControllerStance
 from GaitDataLoader import GaitDataLoader
 
+is_paused = True
+def toggle_pause():
+    global is_paused
+    is_paused = not is_paused
+    if is_paused:
+        print("Simulation paused.")
+    else:
+        print("Simulation resumed.")
+keyboard.add_hotkey('space', toggle_pause)
+ 
 class DigitSimulation:
     MODEL_FILE = 'models/digit-v3.xml'
     DATA_FILE = 'Digit-data_12699.mat'
@@ -18,7 +29,7 @@ class DigitSimulation:
         self.model = mujoco.MjModel.from_xml_path(self.MODEL_FILE)
         self.data = mujoco.MjData(self.model)
         self.viewer = mujoco.viewer.launch_passive(self.model, self.data)
-        self.viewer.cam.distance = 3
+        self.viewer.cam.distance = 5
         self.viewer.cam.azimuth = -90
         self.viewer.cam.elevation = -30
         self.viewer.cam.lookat = [0.0, 0.0, 0.7]
@@ -105,7 +116,8 @@ class DigitSimulation:
                 self.stored_data.append(self.data.qpos[[7, 8, 9, 14, 34, 35, 36, 41]])
         except:
             print('QP failed')
-            
+        
+        # self.ctrl[[4, 5, 14, 15]] = 0.0
         return self.ctrl
     
     def getReducedState(self):
@@ -143,15 +155,18 @@ class DigitSimulation:
 
     def run(self):
         while self.viewer.is_running():
+            global is_paused
             step_start = time.time()
             
             self.s = np.min([(self.data.time-self.last_impact_time)/self.t_step,1.0])
             
-            # if not self.impact_detected:
-            self.data.ctrl = self.solve_qp()
-            mujoco.mj_step(self.model, self.data, nstep=15)
-            if not self.DOUBLE_STANCE:
-                self.impact_detected = self.foot_switching_algo()
+            # if self.s <= 1.0 and self.state == ControllerStance.LEFT_STANCE.name and not self.impact_detected:
+                # if not self.impact_detected:
+            if not is_paused:
+                self.data.ctrl = self.solve_qp()
+                mujoco.mj_step(self.model, self.data, nstep=15)
+                if not self.DOUBLE_STANCE:
+                    self.impact_detected = self.foot_switching_algo()
                 
             self.sync_viewer(step_start)
 
@@ -172,6 +187,7 @@ class DigitSimulation:
 if __name__ == "__main__":
     
     digitSimulation = DigitSimulation()
+    
     digitSimulation.run()
     digitSimulation.close()
 

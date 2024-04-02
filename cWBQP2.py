@@ -153,10 +153,10 @@ class PWQP():
         if self.stance == ControllerStance.RIGHT_STANCE:
             w2 = np.diag([10, 10, 20, 60, # left hip
                           5, 5, 5, 5, # left hand
-                          10, 10, 10, 5, # right hip
+                          60, 60, 10, 5, # right hip
                           5, 5, 5, 5]) # right hand
         elif self.stance == ControllerStance.LEFT_STANCE:
-            w2 = np.diag([10, 10, 10, 5, # left hip
+            w2 = np.diag([60, 60, 10, 5, # left hip
                           5, 5, 5, 5, # left hand
                           10, 10, 20, 60, # right hip
                           5, 5, 5, 5]) # right hand
@@ -164,27 +164,27 @@ class PWQP():
 
         # Define the weight matrix for task output deviation
         W1 = np.diag([100,10,
-                    #   10, #  base orientation x, y, z
+                      10, #  base orientation x, y, z
                     #   10,
-                    #   100,
+                      10,
                       100 #  com position x, y, z
-                      ,1000,100
+                      ,100,100
                       ])
                     #   ,10]) # swing foot orientation roll, pitch, yaw
 
         # Calculate the task output deviation cost component
         term_A = self._getTaskOutput_ddh()[[0, 1,
-                                            # 2, 
+                                            2, 
                                             # 3, 
-                                            # 4,
+                                            4,
                                             5
                                             ,6, 7
                                             ]]
                                             # , 8]]
         term_B = self.pdesddh[[0, 1,
-                            #    2, 
+                               2, 
                             #    3, 
-                            #    4, 
+                               4, 
                                5
                                ,6, 7
                                ]]
@@ -209,9 +209,9 @@ class PWQP():
         
         T_SwF, V_SwF, T_StF, _ = self.extractAndSetParameters()
         
-        kp = np.diag([20, 20, 20, 20, # left hip
+        kp = np.diag([20, 40, 20, 30, # left hip
                       10, 10, 10, 10, # left hand
-                      20, 20, 20, 20, # right hip
+                      20, 40, 20, 30, # right hip
                       10, 10, 10, 10]) # right hand
         kd = 2*np.sqrt(kp)
         self.pdesddq.value = (self.ddq_actuated_des[self.qIindices] - kp @ (q[self.q_act_idx] - self.q_actuated_des[self.qIindices]) - kd @ (dq[self.dq_act_idx] - self.dq_actuated_des[self.qIindices])).reshape((self.n_u-len(self.exclude_list),1))
@@ -366,7 +366,7 @@ class PWQP():
         """
         # Proportional and derivative gains, defined or calculated elsewhere
         # Here, they are assumed to be class attributes or have been set prior to this method call
-        kd = np.diag([20,20,20,
+        kd = np.diag([20,20,10,
                       20,20,20,
                       100,100,100,
                       1,1,1])
