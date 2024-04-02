@@ -197,7 +197,7 @@ class PWQP():
         # Combine all cost components into the total objective
         total_cost = (task_output_deviation_cost +
                     1 * control_effort_cost +
-                    5 * centroidal_momentum_cost +
+                    0 * centroidal_momentum_cost +
                     1*configuration_cost)
 
         objective = cp.Minimize(total_cost)
@@ -209,9 +209,9 @@ class PWQP():
         
         T_SwF, V_SwF, T_StF, _ = self.extractAndSetParameters()
         
-        kp = np.diag([10, 10, 10, 10, # left hip
+        kp = np.diag([20, 20, 20, 20, # left hip
                       10, 10, 10, 10, # left hand
-                      10, 10, 10, 10, # right hip
+                      20, 20, 20, 20, # right hip
                       10, 10, 10, 10]) # right hand
         kd = 2*np.sqrt(kp)
         self.pdesddq.value = (self.ddq_actuated_des[self.qIindices] - kp @ (q[self.q_act_idx] - self.q_actuated_des[self.qIindices]) - kd @ (dq[self.dq_act_idx] - self.dq_actuated_des[self.qIindices])).reshape((self.n_u-len(self.exclude_list),1))
@@ -457,8 +457,14 @@ class PWQP():
         return yaw_matrix
     
     def SwFspring(self, q):
-        # Calculate swing foot spring deflection
-        return 0.0
+        if self.stance == ControllerStance.RIGHT_STANCE:
+            shinSpring = -q[11]
+            heelSpring = -q[13]
+        else: #right swing
+            shinSpring = q[26]
+            heelSpring = q[28]
+
+        return np.min([shinSpring,heelSpring])
     
     def __del__(self) -> None:
         self.csvfile.close()

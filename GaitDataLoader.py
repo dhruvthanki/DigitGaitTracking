@@ -134,48 +134,52 @@ def plot_bezier_curve_with_derivatives(control_points, data, num_points=100):
 if __name__ == '__main__':
     gait_data_loader = GaitDataLoader('Digit-data_12699.mat')
     # plot_gait_data(gait_data_loader)
-    qpos, qvel,qacc = gait_data_loader.evaluate_bezier_curve(0.0)
-    print(qvel)
+        
+    plot_bezier_curve_with_derivatives(gait_data_loader.alpha[3,:], 
+                                       gait_data_loader.gait_data['pos'][0,0][9, :], 
+                                       gait_data_loader.gait_data['pos'][0,0][9, :].shape[0])
     
-    plot_bezier_curve_with_derivatives(gait_data_loader.alpha[3,:], gait_data_loader.p_com[0, :], gait_data_loader.p_com.shape[1])
+    plot_bezier_curve_with_derivatives(gait_data_loader.alpha[13,:], 
+                                       gait_data_loader.gait_data['pos'][0,0][24, :], 
+                                       gait_data_loader.gait_data['pos'][0,0][24, :].shape[0])
     
     # plot_bezier_curve_with_derivatives(gait_data_loader.com_x_bezier_alpha, gait_data_loader.p_com[0, :], gait_data_loader.p_com.shape[1])
     # plot_bezier_curve_with_derivatives(gait_data_loader.com_y_bezier_alpha, gait_data_loader.p_com[1, :], gait_data_loader.p_com.shape[1])
     # plot_bezier_curve_with_derivatives(gait_data_loader.com_z_bezier_alpha, gait_data_loader.p_com[2, :], gait_data_loader.p_com.shape[1])
     
-    t_values = np.linspace(0, 1, gait_data_loader.p_com.shape[1])
-    curve_valuesX = [GaitDataLoader.bezier_curve(0, t, gait_data_loader.com_x_bezier_alpha) for t in t_values]
-    curve_valuesY = [GaitDataLoader.bezier_curve(0, t, gait_data_loader.com_y_bezier_alpha) for t in t_values]
-    curve_valuesZ = [GaitDataLoader.bezier_curve(0, t, gait_data_loader.com_z_bezier_alpha) for t in t_values]
+    # t_values = np.linspace(0, 1, gait_data_loader.p_com.shape[1])
+    # curve_valuesX = [GaitDataLoader.bezier_curve(0, t, gait_data_loader.com_x_bezier_alpha) for t in t_values]
+    # curve_valuesY = [GaitDataLoader.bezier_curve(0, t, gait_data_loader.com_y_bezier_alpha) for t in t_values]
+    # curve_valuesZ = [GaitDataLoader.bezier_curve(0, t, gait_data_loader.com_z_bezier_alpha) for t in t_values]
     
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
+    # fig = plt.figure()
+    # ax = fig.add_subplot(111, projection='3d')
 
-    # Scatter plot
-    ax.plot(gait_data_loader.p_com[0, :], gait_data_loader.p_com[1, :], gait_data_loader.p_com[2, :])
-    ax.plot(curve_valuesX, curve_valuesY, curve_valuesZ, label='Bezier Curve')
+    # # Scatter plot
+    # ax.plot(gait_data_loader.p_com[0, :], gait_data_loader.p_com[1, :], gait_data_loader.p_com[2, :])
+    # ax.plot(curve_valuesX, curve_valuesY, curve_valuesZ, label='Bezier Curve')
 
-    # Setting labels
-    ax.set_xlabel('X Label')
-    ax.set_ylabel('Y Label')
-    ax.set_zlabel('Z Label')
+    # # Setting labels
+    # ax.set_xlabel('X Label')
+    # ax.set_ylabel('Y Label')
+    # ax.set_zlabel('Z Label')
     
-    # Getting the limits for each axis and calculating the center
-    x_limits = ax.get_xlim()
-    y_limits = ax.get_ylim()
-    z_limits = ax.get_zlim()
+    # # Getting the limits for each axis and calculating the center
+    # x_limits = ax.get_xlim()
+    # y_limits = ax.get_ylim()
+    # z_limits = ax.get_zlim()
 
-    x_center = np.mean(x_limits)
-    y_center = np.mean(y_limits)
-    z_center = np.mean(z_limits)
+    # x_center = np.mean(x_limits)
+    # y_center = np.mean(y_limits)
+    # z_center = np.mean(z_limits)
 
-    # Calculating the maximum range between the limits
-    max_range = max(np.ptp(x_limits), np.ptp(y_limits), np.ptp(z_limits)) / 2
+    # # Calculating the maximum range between the limits
+    # max_range = max(np.ptp(x_limits), np.ptp(y_limits), np.ptp(z_limits)) / 2
 
-    # Setting the limits for each axis to the same range
-    ax.set_xlim(x_center - max_range, x_center + max_range)
-    ax.set_ylim(y_center - max_range, y_center + max_range)
-    ax.set_zlim(z_center - max_range, z_center + max_range)
+    # # Setting the limits for each axis to the same range
+    # ax.set_xlim(x_center - max_range, x_center + max_range)
+    # ax.set_ylim(y_center - max_range, y_center + max_range)
+    # ax.set_zlim(z_center - max_range, z_center + max_range)
 
     # Displaying the plot
     plt.show()

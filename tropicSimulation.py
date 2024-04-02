@@ -1,6 +1,4 @@
 import time
-import math
-import copy
 
 import numpy as np
 import mujoco
@@ -21,7 +19,7 @@ class DigitSimulation:
         self.data = mujoco.MjData(self.model)
         self.viewer = mujoco.viewer.launch_passive(self.model, self.data)
         self.viewer.cam.distance = 3
-        self.viewer.cam.azimuth = -120
+        self.viewer.cam.azimuth = -90
         self.viewer.cam.elevation = -30
         self.viewer.cam.lookat = [0.0, 0.0, 0.7]
         self.gait_data_loader = GaitDataLoader(self.DATA_FILE)
@@ -53,9 +51,6 @@ class DigitSimulation:
         self.machine = Machine(model=self, states=states, transitions=transitions, initial=ControllerStance.RIGHT_STANCE.name)
 
     def set_initial_state(self):
-        # if self.DOUBLE_STANCE:
-        #     self.data.qpos = self.model.key_qpos[0, :]
-        # else:
         self.data.qpos = self.model.key_qpos
         self.data.qvel = np.zeros_like(self.data.qvel)
         self.data.qvel[0] = 1.0
@@ -71,11 +66,7 @@ class DigitSimulation:
         self.ctrl = np.zeros(self.model.nu)
 
     def solve_qp(self):
-        
         q, dq, _ = self.getReducedState()
-        
-        if self.s > 1.0:
-            print('s:', self.s)
             
         try:
             if self.state == ControllerStance.RIGHT_STANCE.name:
@@ -84,8 +75,6 @@ class DigitSimulation:
                     q_actuated_des = self.rightStanceQP.Dcf.get_actuated_q()
                     dq_actuated_des = np.zeros_like(q_actuated_des)
                     ddq_actuated_des = np.zeros_like(q_actuated_des)
-                    # des_com_pos = np.array([0.05, 0.0, 0.9])
-                    # des_com_vel = np.array([0.0, 0.0, 0.0])
                 else:
                     q_actuated_des, dq_actuated_des, ddq_actuated_des = self.get_desired_actuated_configuration(self.s)
                     q_actuated_des[6:10] = np.array([-0.106145, 0.894838, -0.00278591, 0.344714])
@@ -94,12 +83,6 @@ class DigitSimulation:
                     dq_actuated_des[16:20] = np.array([0.0, 0.0, 0.0, 0.0])
                     ddq_actuated_des[6:10] = np.array([0.0, 0.0, 0.0, 0.0])
                     ddq_actuated_des[16:20] = np.array([0.0, 0.0, 0.0, 0.0])
-                    # des_com_pos, des_com_vel = self.gait_data_loader.getCOMTrajectory(self.s)
-                # if self.s <= 1.0 and self.s >= 0.0:
-                #     self.stored_desired.append(q_actuated_des)
-                #     self.stored_time.append(self.data.time)
-                #     self.stored_ctrl = np.vstack((self.stored_ctrl, self.ctrl))
-                #     self.stored_data.append(copy.deepcopy(self.data))
                 self.rightStanceQP.set_desired_arm_q(q_actuated_des, dq_actuated_des, ddq_actuated_des)
                 self.ctrl = self.rightStanceQP.WalkingQP()
                 
@@ -112,13 +95,14 @@ class DigitSimulation:
                 dq_actuated_des[16:20] = np.array([0.0, 0.0, 0.0, 0.0])
                 ddq_actuated_des[6:10] = np.array([0.0, 0.0, 0.0, 0.0])
                 ddq_actuated_des[16:20] = np.array([0.0, 0.0, 0.0, 0.0])
-                # des_com_pos, des_com_vel = self.gait_data_loader.getCOMTrajectory(self.s)
                 self.leftStanceQP.set_desired_arm_q(q_actuated_des, dq_actuated_des, ddq_actuated_des)
                 self.ctrl = self.leftStanceQP.WalkingQP()
-            # if self.state == ControllerStance.RIGHT_STANCE.name:
-            #     self.ctrl[[4,5]] = 0.0
-            # elif self.state == ControllerStance.LEFT_STANCE.name:
-            #     self.ctrl[[14, 15]] = 0.0
+            
+            if self.s <= 1.0 and self.s >= 0.0:
+                self.stored_desired.append(q_actuated_des[[0, 1, 2, 3, 10, 11, 12, 13]])
+                self.stored_time.append(self.data.time)
+                self.stored_ctrl = np.vstack((self.stored_ctrl, self.ctrl))
+                self.stored_data.append(self.data.qpos[[7, 8, 9, 14, 34, 35, 36, 41]])
         except:
             print('QP failed')
             
@@ -137,7 +121,7 @@ class DigitSimulation:
                           0, 1, 2, 3, 4, 5, 
                           16, 17, 18, 19]
             q_des, dq_des, ddq_des = self.gait_data_loader.evaluate_bezier_curve(phase)
-            return q_des[relablling_idx], dq_des[relablling_idx], ddq_des[relablling_idx]
+            return -q_des[relablling_idx], -dq_des[relablling_idx], -ddq_des[relablling_idx]
 
     def foot_switching_algo(self):
         q, _, _ = self.getReducedState()
@@ -148,9 +132,10 @@ class DigitSimulation:
             swingFootSpringDefection = self.rightStanceQP.SwFspring(q)
             T_SwFoot, _ = self.rightStanceQP.Dcf.get_pose_and_vel_for_site('left-foot')
         PSwFoot = T_SwFoot[:3, 3].reshape((3, 1))
-        if self.s >= 0.5 and (PSwFoot[2] < 1e-2 or swingFootSpringDefection > 0.03):
+        if self.s >= 0.5 and (PSwFoot[2] < 2e-2):# or swingFootSpringDefection > 0.05):
             self.switch_stance()
-            print('Switching Stance')
+            print('Switching Stance at time:', self.data.time, 'State:', self.state)
+            # self.data.qvel[0] += 0.5
             self.s = 0
             self.last_impact_time = self.data.time
             return True
@@ -162,14 +147,11 @@ class DigitSimulation:
             
             self.s = np.min([(self.data.time-self.last_impact_time)/self.t_step,1.0])
             
-            # if self.s < 1.0:
             # if not self.impact_detected:
             self.data.ctrl = self.solve_qp()
             mujoco.mj_step(self.model, self.data, nstep=15)
             if not self.DOUBLE_STANCE:
                 self.impact_detected = self.foot_switching_algo()
-            # if math.isclose(self.s, 1.0, rel_tol=1e-9, abs_tol=0.0):
-            #     break
                 
             self.sync_viewer(step_start)
 
@@ -188,39 +170,12 @@ class DigitSimulation:
         self.viewer.close()
 
 if __name__ == "__main__":
-    import pickle
+    
     digitSimulation = DigitSimulation()
     digitSimulation.run()
     digitSimulation.close()
-    
-    # data_to_store = {'mjdata': digitSimulation.stored_data, 'desired': digitSimulation.stored_desired}
-    # with open('my_list.pkl', 'wb') as file:
-    #     pickle.dump(data_to_store, file)
-    
-    # import matplotlib.pyplot as plt
-    # plt.plot(digitSimulation.stored_time, digitSimulation.stored_data)
-    
-    # plt.plot(digitSimulation.stored_time, digitSimulation.stored_ctrl[1:,0])
-    # plt.plot(digitSimulation.stored_time, digitSimulation.stored_ctrl[1:,1])
-    # plt.plot(digitSimulation.stored_time, digitSimulation.stored_ctrl[1:,2])
-    # plt.plot(digitSimulation.stored_time, digitSimulation.stored_ctrl[1:,3])
-    # plt.plot(digitSimulation.stored_time, digitSimulation.stored_ctrl[1:,4])
-    # plt.plot(digitSimulation.stored_time, digitSimulation.stored_ctrl[1:,5])
-    # plt.plot(digitSimulation.stored_time, digitSimulation.stored_ctrl[1:,6])
-    # plt.plot(digitSimulation.stored_time, digitSimulation.stored_ctrl[1:,7])
-    # plt.plot(digitSimulation.stored_time, digitSimulation.stored_ctrl[1:,8])
-    # plt.plot(digitSimulation.stored_time, digitSimulation.stored_ctrl[1:,9])
-    # plt.plot(digitSimulation.stored_time, digitSimulation.stored_ctrl[1:,10])
-    # plt.plot(digitSimulation.stored_time, digitSimulation.stored_ctrl[1:,11])
-    # plt.plot(digitSimulation.stored_time, digitSimulation.stored_ctrl[1:,12])
-    # plt.plot(digitSimulation.stored_time, digitSimulation.stored_ctrl[1:,13])
-    # plt.plot(digitSimulation.stored_time, digitSimulation.stored_ctrl[1:,14])
-    # plt.plot(digitSimulation.stored_time, digitSimulation.stored_ctrl[1:,15])
-    # plt.plot(digitSimulation.stored_time, digitSimulation.stored_ctrl[1:,16])
-    # plt.plot(digitSimulation.stored_time, digitSimulation.stored_ctrl[1:,17])
-    # plt.plot(digitSimulation.stored_time, digitSimulation.stored_ctrl[1:,18])
-    # plt.plot(digitSimulation.stored_time, digitSimulation.stored_ctrl[1:,19])
-    # plt.legend(['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19'])
-    # plt.xlim([0, 0.5])
-    # plt.ylim([-0.9, 0.9])
-    # plt.show()
+
+    import pickle
+    data_to_store = {'state': digitSimulation.stored_data, 'desired': digitSimulation.stored_desired, 'time': digitSimulation.stored_time}
+    with open('my_list.pkl', 'wb') as file:
+        pickle.dump(data_to_store, file)
