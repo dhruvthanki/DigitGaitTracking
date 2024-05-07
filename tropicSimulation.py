@@ -1,6 +1,8 @@
 import time
 import keyboard
+import math
 
+from scipy.spatial.transform import Rotation as R
 import numpy as np
 import mujoco
 import mujoco.viewer
@@ -37,6 +39,7 @@ class DigitSimulation:
         self.stored_desired = []
         self.stored_time = []
         self.stored_data = []
+        self.base_qpos = []
         self.stored_ctrl = np.zeros(self.model.nu)
         self.initialize_simulation()
     
@@ -109,11 +112,14 @@ class DigitSimulation:
                 self.leftStanceQP.set_desired_arm_q(q_actuated_des, dq_actuated_des, ddq_actuated_des)
                 self.ctrl = self.leftStanceQP.WalkingQP()
             
-            if self.s <= 1.0 and self.s >= 0.0:
-                self.stored_desired.append(q_actuated_des[[0, 1, 2, 3, 10, 11, 12, 13]])
-                self.stored_time.append(self.data.time)
-                self.stored_ctrl = np.vstack((self.stored_ctrl, self.ctrl))
-                self.stored_data.append(self.data.qpos[[7, 8, 9, 14, 34, 35, 36, 41]])
+            # # if self.s <= 1.0 and self.s >= 0.0:
+            # self.stored_desired.append(q_actuated_des[[0, 1, 2, 3, 10, 11, 12, 13]])
+            # self.stored_time.append(self.data.time)
+            # self.stored_ctrl = np.vstack((self.stored_ctrl, self.ctrl))
+            # self.stored_data.append(self.data.qpos[[7, 8, 9, 14, 34, 35, 36, 41]])
+            # roll, pitch, yaw = self.quaternion_to_rpy(self.data.qpos[3:7])
+            # # self.base_qpos.append(self.data.qpos[[0, 1, 2, 3, 4, 5, 6]])
+            # self.base_qpos.append([roll, pitch, yaw, self.data.qpos[0], self.data.qpos[1], self.data.qpos[2]])
         except:
             print('QP failed')
         
@@ -160,14 +166,19 @@ class DigitSimulation:
             
             self.s = np.min([(self.data.time-self.last_impact_time)/self.t_step,1.0])
             
-            # if self.s <= 1.0 and self.state == ControllerStance.LEFT_STANCE.name and not self.impact_detected:
-                # if not self.impact_detected:
             if not is_paused:
                 self.data.ctrl = self.solve_qp()
                 mujoco.mj_step(self.model, self.data, nstep=15)
                 if not self.DOUBLE_STANCE:
                     self.impact_detected = self.foot_switching_algo()
                 
+                self.stored_time.append(self.data.time)
+                # self.stored_ctrl = np.vstack((self.stored_ctrl, self.ctrl))
+                # self.stored_data.append(self.data.qpos[[7, 8, 9, 14, 34, 35, 36, 41]])
+                roll, pitch, yaw = self.quaternion_to_rpy(self.data.qpos[3:7])
+                # self.base_qpos.append(self.data.qpos[[0, 1, 2, 3, 4, 5, 6]])
+                self.base_qpos.append([roll, pitch, yaw, self.data.qpos[0], self.data.qpos[1], self.data.qpos[2]])
+            
             self.sync_viewer(step_start)
 
     def sync_viewer(self, step_start):
@@ -183,6 +194,25 @@ class DigitSimulation:
     
     def close(self):
         self.viewer.close()
+        
+    def quaternion_to_rpy(self, quaternion):
+        """
+        Convert a quaternion to roll, pitch, and yaw angles using SciPy's Rotation module.
+        
+        Parameters:
+        quaternion (list or np.ndarray): Quaternion represented as [w, x, y, z].
+        
+        Returns:
+        tuple: Roll, pitch, and yaw angles in radians.
+        """
+        # Create a Rotation object from the quaternion
+        rotation = R.from_quat(quaternion)
+        
+        # Convert to Euler angles with the 'xyz' convention
+        rpy = rotation.as_euler('xyz', degrees=False)
+        
+        # Return the roll, pitch, and yaw angles
+        return rpy[0], rpy[1], rpy[2]
 
 if __name__ == "__main__":
     
@@ -192,6 +222,9 @@ if __name__ == "__main__":
     digitSimulation.close()
 
     import pickle
-    data_to_store = {'state': digitSimulation.stored_data, 'desired': digitSimulation.stored_desired, 'time': digitSimulation.stored_time}
+    data_to_store = {'state': digitSimulation.stored_data, 
+                     'desired': digitSimulation.stored_desired, 
+                     'time': digitSimulation.stored_time,
+                     'base_qpos': digitSimulation.base_qpos}
     with open('my_list.pkl', 'wb') as file:
         pickle.dump(data_to_store, file)

@@ -1,2 +1,6 @@
 /models/stl
 /__pycache__
+/DigitGaitTracking/*
+*.pkl
+*.csv
+*.ini
