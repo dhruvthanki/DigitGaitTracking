@@ -65,11 +65,15 @@ class PWQP():
         self.B = self.Dcf.get_B_matrix()
         self.vu_limit = self.Dcf.get_u_limit().reshape((self.n_u,1))
         
-        self.exclude_list = [4, 5, 14, 15] #exclude toe joints
+        self.q_act_idx, self.dq_act_idx = self.Dcf.get_actuated_indices()
         
-        q_act_idx, dq_act_idx = self.Dcf.get_actuated_indices()
-        self.q_act_idx = self.exclude_swing_foot_indices(q_act_idx, self.exclude_list)
-        self.dq_act_idx = self.exclude_swing_foot_indices(dq_act_idx, self.exclude_list)
+        if not self.doubleStance:
+            self.exclude_list = [4, 5, 14, 15] #exclude toe joints
+        else:
+            self.exclude_list = []
+            
+        self.q_act_idx = self.exclude_swing_foot_indices(self.q_act_idx, self.exclude_list)
+        self.dq_act_idx = self.exclude_swing_foot_indices(self.dq_act_idx, self.exclude_list)
         self.qIindices = [i for i in range(20) if i not in self.exclude_list]
         
         self.pdesddq = cp.Parameter((self.n_u-len(self.exclude_list),1),'des_ddq')
@@ -160,6 +164,13 @@ class PWQP():
                           5, 5, 5, 5, # left hand
                           10, 10, 20, 60, # right hip
                           5, 5, 5, 5]) # right hand
+        if self.doubleStance:
+            w2 = np.diag([10, 10, 20, 60, # left hip
+                          5, 5,
+                          5, 5, 5, 5, # left hand
+                          60, 60, 10, 5, # right hip
+                          5, 5,
+                          5, 5, 5, 5])
         configuration_cost = cp.sum_squares(w2 @ (self.vddq[self.dq_act_idx] - self.pdesddq))
 
         # Define the weight matrix for task output deviation
@@ -209,11 +220,20 @@ class PWQP():
         
         T_SwF, V_SwF, T_StF, _ = self.extractAndSetParameters()
         
-        kp = np.diag([20, 40, 20, 30, # left hip
-                      10, 10, 10, 10, # left hand
-                      20, 40, 20, 30, # right hip
-                      10, 10, 10, 10]) # right hand
+        if self.doubleStance:
+            kp = np.diag([20, 40, 20, 30, # left hip
+                          20, 20,
+                            10, 10, 10, 10, # left hand
+                            20, 40, 20, 30, # right hip
+                            20, 20,
+                            10, 10, 10, 10]) # right hand
+        else:
+            kp = np.diag([20, 40, 20, 30, # left hip
+                        10, 10, 10, 10, # left hand
+                        20, 40, 20, 30, # right hip
+                        10, 10, 10, 10]) # right hand
         kd = 2*np.sqrt(kp)
+        
         self.pdesddq.value = (self.ddq_actuated_des[self.qIindices] - kp @ (q[self.q_act_idx] - self.q_actuated_des[self.qIindices]) - kd @ (dq[self.dq_act_idx] - self.dq_actuated_des[self.qIindices])).reshape((self.n_u-len(self.exclude_list),1))
         
         yawStF = np.arctan2(T_StF[1,0],T_StF[0,0])
