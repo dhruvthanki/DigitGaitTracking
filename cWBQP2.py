@@ -14,7 +14,7 @@ class ControllerStance(Enum):
 class PWQP():
     def __init__(self, stance: ControllerStance = ControllerStance.RIGHT_STANCE, doubleStance: bool = True):
         self.stance = stance
-        self.des_com_pos = np.array([0.05, 0.0, 0.9])
+        self.des_com_pos = np.array([0.05, 0.0, 0.8])
         self.des_com_vel = np.array([0.0, 0.0, 0.0])
         self.Dcf = DigitCasadiWrapper()
         self.doubleStance = doubleStance
@@ -163,43 +163,53 @@ class PWQP():
             w2 = np.diag([60, 60, 10, 5, # left hip
                           5, 5, 5, 5, # left hand
                           10, 10, 20, 60, # right hip
-                          5, 5, 5, 5]) # right hand
+                          20, 20, 20, 20]) # right hand
         if self.doubleStance:
             w2 = np.diag([10, 10, 20, 60, # left hip
-                          5, 5,
+                          1, 1,
                           5, 5, 5, 5, # left hand
                           60, 60, 10, 5, # right hip
-                          5, 5,
-                          5, 5, 5, 5])
+                          1, 1,
+                          20, 20, 20, 20])
         configuration_cost = cp.sum_squares(w2 @ (self.vddq[self.dq_act_idx] - self.pdesddq))
+        
+        if self.doubleStance:
+            # Define the weight matrix for task output deviation
+            W1 = 1000.0*np.diag([1,1,1,
+                            1,1,1]) # base orientation roll, pitch, com acceleration z, swing foot orientation roll, pitch
 
-        # Define the weight matrix for task output deviation
-        W1 = np.diag([100,10,
-                      10, #  base orientation x, y, z
-                    #   10,
-                      10,
-                      100 #  com position x, y, z
-                      ,100,100
-                      ])
-                    #   ,10]) # swing foot orientation roll, pitch, yaw
+            # Calculate the task output deviation cost component
+            term_A = self._getTaskOutput_ddh()[[0, 1, 2, 3, 4, 5]]
+            term_B = self.pdesddh[[0, 1, 2, 3, 4, 5]]
+        else:
+            # Define the weight matrix for task output deviation
+            W1 = np.diag([100,10,
+                        10, #  base orientation x, y, z
+                        #   10,
+                        10,
+                        100 #  com position x, y, z
+                        ,100,100
+                        ])
+                        #   ,10]) # swing foot orientation roll, pitch, yaw
 
-        # Calculate the task output deviation cost component
-        term_A = self._getTaskOutput_ddh()[[0, 1,
-                                            2, 
-                                            # 3, 
-                                            4,
-                                            5
-                                            ,6, 7
-                                            ]]
-                                            # , 8]]
-        term_B = self.pdesddh[[0, 1,
-                               2, 
-                            #    3, 
-                               4, 
-                               5
-                               ,6, 7
-                               ]]
-                            #    , 8]]
+            # Calculate the task output deviation cost component
+            term_A = self._getTaskOutput_ddh()[[0, 1,
+                                                2, 
+                                                # 3, 
+                                                4,
+                                                5
+                                                ,6, 7
+                                                ]]
+                                                # , 8]]
+            term_B = self.pdesddh[[0, 1,
+                                2, 
+                                #    3, 
+                                4, 
+                                5
+                                ,6, 7
+                                ]]
+                                #    , 8]]
+        
         task_output_deviation_cost = cp.sum_squares( W1 @ (term_A - term_B))
 
         # Calculate the control effort cost component
@@ -208,7 +218,7 @@ class PWQP():
         # Combine all cost components into the total objective
         total_cost = (task_output_deviation_cost +
                     1 * control_effort_cost +
-                    0 * centroidal_momentum_cost +
+                    1 * centroidal_momentum_cost +
                     1*configuration_cost)
 
         objective = cp.Minimize(total_cost)
@@ -435,7 +445,7 @@ class PWQP():
 
         return T_SwF, V_SwF, T_StF, V_StF
     
-    def set_desired_arm_q(self, q_actuated_des, dq_actuated_des, ddq_actuated_des, des_com_pos = np.array([0.05, 0.0, 0.9]), des_com_vel = np.array([0.0, 0.0, 0.0])):
+    def set_desired_arm_q(self, q_actuated_des, dq_actuated_des, ddq_actuated_des, des_com_pos = np.array([0.05, 0.0, 0.8]), des_com_vel = np.array([0.0, 0.0, 0.0])):
         self.q_actuated_des = q_actuated_des
         self.dq_actuated_des = dq_actuated_des
         self.ddq_actuated_des = ddq_actuated_des
@@ -475,6 +485,9 @@ class PWQP():
         ])
         
         return yaw_matrix
+    
+    def getActuateState(self, q, dq, q_des, dq_des):
+        return q[self.q_act_idx], dq[self.dq_act_idx], q_des[self.qIindices], dq_des[self.qIindices]
     
     def SwFspring(self, q):
         if self.stance == ControllerStance.RIGHT_STANCE:

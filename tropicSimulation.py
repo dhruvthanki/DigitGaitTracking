@@ -1,5 +1,4 @@
 import time
-import keyboard
 import math
 
 from scipy.spatial.transform import Rotation as R
@@ -9,9 +8,11 @@ import mujoco.viewer
 from transitions import Machine
 
 from cWBQP2 import PWQP, ControllerStance
-from GaitDataLoader import GaitDataLoader
+from GaitDataLoader import GaitDataLoader, q_i, q_actuated
+from DataLogger import RobotDataLogger
 
 is_paused = True
+import keyboard
 def toggle_pause():
     global is_paused
     is_paused = not is_paused
@@ -28,6 +29,7 @@ class DigitSimulation:
     
     def __init__(self):
         self.impact_detected = False
+        self.logger = RobotDataLogger()
         self.model = mujoco.MjModel.from_xml_path(self.MODEL_FILE)
         self.data = mujoco.MjData(self.model)
         self.viewer = mujoco.viewer.launch_passive(self.model, self.data)
@@ -36,11 +38,9 @@ class DigitSimulation:
         self.viewer.cam.elevation = -30
         self.viewer.cam.lookat = [0.0, 0.0, 0.7]
         self.gait_data_loader = GaitDataLoader(self.DATA_FILE)
-        self.stored_desired = []
-        self.stored_time = []
-        self.stored_data = []
-        self.base_qpos = []
-        self.stored_ctrl = np.zeros(self.model.nu)
+        self.contant_force = 0.0
+        self.randon_basis = np.ones(6)
+        self.setOnce = True
         self.initialize_simulation()
     
     def initialize_simulation(self):
@@ -81,14 +81,15 @@ class DigitSimulation:
 
     def solve_qp(self):
         q, dq, _ = self.getReducedState()
-            
+        
         try:
             if self.state == ControllerStance.RIGHT_STANCE.name:
                 self.rightStanceQP.Dcf.set_state(q, dq)
-                if self.DOUBLE_STANCE:
+                if self.DOUBLE_STANCE and self.setOnce:
                     q_actuated_des = self.rightStanceQP.Dcf.get_actuated_q()
                     dq_actuated_des = np.zeros_like(q_actuated_des)
                     ddq_actuated_des = np.zeros_like(q_actuated_des)
+                    # self.setOnce = False
                 else:
                     q_actuated_des, dq_actuated_des, ddq_actuated_des = self.get_desired_actuated_configuration(self.s)
                     q_actuated_des[6:10] = np.array([-0.106145, 0.894838, -0.00278591, 0.344714])
@@ -112,14 +113,39 @@ class DigitSimulation:
                 self.leftStanceQP.set_desired_arm_q(q_actuated_des, dq_actuated_des, ddq_actuated_des)
                 self.ctrl = self.leftStanceQP.WalkingQP()
             
-            # # if self.s <= 1.0 and self.s >= 0.0:
-            # self.stored_desired.append(q_actuated_des[[0, 1, 2, 3, 10, 11, 12, 13]])
-            # self.stored_time.append(self.data.time)
-            # self.stored_ctrl = np.vstack((self.stored_ctrl, self.ctrl))
-            # self.stored_data.append(self.data.qpos[[7, 8, 9, 14, 34, 35, 36, 41]])
-            # roll, pitch, yaw = self.quaternion_to_rpy(self.data.qpos[3:7])
-            # # self.base_qpos.append(self.data.qpos[[0, 1, 2, 3, 4, 5, 6]])
-            # self.base_qpos.append([roll, pitch, yaw, self.data.qpos[0], self.data.qpos[1], self.data.qpos[2]])
+            if self.state == ControllerStance.RIGHT_STANCE.name:
+                siteID = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SITE, 'left-foot')
+            else:
+                siteID = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SITE, 'right-foot')
+            
+            torso_rpy = self.quaternion_to_rpy(self.data.qpos[3:7])
+            swingFoot_ori = R.from_matrix(self.data.site_xmat[siteID, :].reshape((3, 3)))
+            swingFoot_rpy = swingFoot_ori.as_euler('xyz', degrees=True)
+            
+            torseID = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, 'base')
+            mujoco.mj_subtreeVel(self.model, self.data)
+            mujoco.mj_comPos(self.model, self.data)
+            
+            torque_limits = self.leftStanceQP.Dcf.get_u_limit().reshape((self.leftStanceQP.n_u,1))
+            percent_to_max_torque = (np.abs(self.ctrl) / torque_limits.squeeze()) * 100
+            
+            q_curr, dq_curr, q_act, dq_act = self.rightStanceQP.getActuateState(q, dq, q_actuated_des, dq_actuated_des)
+            q_err = q_act - q_curr
+            dq_err = dq_act - dq_curr
+            
+            cam = self.data.subtree_angmom[torseID, :]
+            comPos = self.data.subtree_com[torseID,:]
+            
+            self.logger.log_data(self.data.time,
+                                 np.rad2deg(q_err),
+                                 np.rad2deg(dq_err),
+                                 np.rad2deg(q_act),
+                                 np.rad2deg(dq_act),
+                                 percent_to_max_torque,
+                                 torso_rpy,
+                                 swingFoot_rpy,
+                                 cam,
+                                 comPos)
         except:
             print('QP failed')
         
@@ -160,30 +186,59 @@ class DigitSimulation:
         return False
 
     def run(self):
+        sim_start = time.time()
         while self.viewer.is_running():
             global is_paused
+            if not is_paused and self.setOnce:
+                sim_start = time.time()
+                self.setOnce = False
+            # else:
+            #     self.setOnce = True
             step_start = time.time()
             
             self.s = np.min([(self.data.time-self.last_impact_time)/self.t_step,1.0])
             
+            if self.data.time-self.contant_force>0.01: # 100Hz
+                self.contant_force = self.data.time
+                self.randon_basis = np.random.randn(6)
+            
             if not is_paused:
                 self.data.ctrl = self.solve_qp()
+                torseID = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, 'base')
+                # self.data.xfrc_applied[torseID,:] = 10.0*self.randon_basis
                 mujoco.mj_step(self.model, self.data, nstep=15)
                 if not self.DOUBLE_STANCE:
                     self.impact_detected = self.foot_switching_algo()
-                
-                self.stored_time.append(self.data.time)
-                # self.stored_ctrl = np.vstack((self.stored_ctrl, self.ctrl))
-                # self.stored_data.append(self.data.qpos[[7, 8, 9, 14, 34, 35, 36, 41]])
-                roll, pitch, yaw = self.quaternion_to_rpy(self.data.qpos[3:7])
-                # self.base_qpos.append(self.data.qpos[[0, 1, 2, 3, 4, 5, 6]])
-                self.base_qpos.append([roll, pitch, yaw, self.data.qpos[0], self.data.qpos[1], self.data.qpos[2]])
             
-            self.sync_viewer(step_start)
+            self.sync_viewer(step_start, self.randon_basis[:3])
+            
+            if (time.time() - sim_start > 5) and not is_paused:
+                print('Simulation time:', self.data.time)
+                break
 
-    def sync_viewer(self, step_start):
-        with self.viewer.lock():
-            self.viewer.opt.flags[mujoco.mjtVisFlag.mjVIS_CONTACTPOINT] = int(self.data.time % 2)
+    def sync_viewer(self, step_start, endPoint):
+        global is_paused
+        if not is_paused:
+            with self.viewer.lock():
+                torseID = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, 'base')
+                base_pos = self.data.xpos[torseID,:]
+                comPos = self.data.subtree_com[torseID,:]
+                
+                if endPoint.all()!=0.0:
+                    length = np.linalg.norm(endPoint)
+                
+                rot = self.orientation_matrix(base_pos, base_pos + endPoint)
+                
+                self.viewer.opt.flags[mujoco.mjtVisFlag.mjVIS_CONTACTPOINT] = int(self.data.time % 2)
+                # mujoco.mjv_initGeom(
+                #     self.viewer.user_scn.geoms[0],
+                #     type=mujoco.mjtGeom.mjGEOM_ARROW,
+                #     size=[0.01, 0.01, length],
+                #     pos=base_pos,
+                #     mat=rot.flatten(),
+                #     rgba=np.array([1,0,0,1])
+                #     )
+                # self.viewer.user_scn.ngeom = 1
         self.viewer.sync()
         self.maintain_realtime(step_start)
 
@@ -193,6 +248,7 @@ class DigitSimulation:
             time.sleep(time_until_next_step)
     
     def close(self):
+        self.logger.save_data()
         self.viewer.close()
         
     def quaternion_to_rpy(self, quaternion):
@@ -209,10 +265,52 @@ class DigitSimulation:
         rotation = R.from_quat(quaternion)
         
         # Convert to Euler angles with the 'xyz' convention
-        rpy = rotation.as_euler('xyz', degrees=False)
+        rpy = rotation.as_euler('xyz', degrees=True)
         
         # Return the roll, pitch, and yaw angles
-        return rpy[0], rpy[1], rpy[2]
+        return rpy
+    
+    def orientation_matrix(self, point1, point2):
+        # Calculate the vector connecting the two points
+        vector = np.array(point2) - np.array(point1)
+        
+        # Normalize the vector
+        norm = np.linalg.norm(vector)
+        if norm == 0:
+            raise ValueError("The two points are the same, so the vector length is zero.")
+        normalized_vector = vector / norm
+        
+        # Create the orientation matrix
+        # For simplicity, let's assume the matrix aligns the vector with the x-axis.
+        # This means we will find a rotation matrix that aligns the vector to [1, 0, 0].
+        
+        # Calculate the axis of rotation (cross product with x-axis)
+        x_axis = np.array([1, 0, 0])
+        axis_of_rotation = np.cross(x_axis, normalized_vector)
+        axis_norm = np.linalg.norm(axis_of_rotation)
+        
+        if axis_norm == 0:
+            # If the axis norm is 0, the vectors are already aligned
+            if np.dot(x_axis, normalized_vector) > 0:
+                return np.eye(3)  # No rotation needed
+            else:
+                # 180 degrees rotation around any perpendicular axis, e.g., y-axis
+                return np.array([[1, 0, 0], [0, -1, 0], [0, 0, -1]])
+        
+        axis_of_rotation = axis_of_rotation / axis_norm
+        
+        # Calculate the angle of rotation (dot product with x-axis)
+        angle = np.arccos(np.dot(x_axis, normalized_vector))
+        
+        # Create the rotation matrix using Rodrigues' rotation formula
+        K = np.array([[0, -axis_of_rotation[2], axis_of_rotation[1]],
+                    [axis_of_rotation[2], 0, -axis_of_rotation[0]],
+                    [-axis_of_rotation[1], axis_of_rotation[0], 0]])
+        
+        R = np.eye(3) + np.sin(angle) * K + (1 - np.cos(angle)) * np.dot(K, K)
+        
+        return R
+
 
 if __name__ == "__main__":
     
@@ -220,11 +318,3 @@ if __name__ == "__main__":
     
     digitSimulation.run()
     digitSimulation.close()
-
-    import pickle
-    data_to_store = {'state': digitSimulation.stored_data, 
-                     'desired': digitSimulation.stored_desired, 
-                     'time': digitSimulation.stored_time,
-                     'base_qpos': digitSimulation.base_qpos}
-    with open('my_list.pkl', 'wb') as file:
-        pickle.dump(data_to_store, file)

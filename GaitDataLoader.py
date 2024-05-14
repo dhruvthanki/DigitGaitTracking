@@ -4,6 +4,17 @@ from scipy.special import comb
 import matplotlib.pyplot as plt
 from scipy.optimize import least_squares
 
+q_i = [0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 14, 15, 16, 17, 18, 23, 28, 29, 30, 31, 32, 33, 34, 35, 36, 41, 42, 43, 44, 45, 50, 55, 56, 57, 58, 59, 60]
+q_i = [x - 7 for x in q_i[7:]]
+
+q_actuated = [7, 8, 9, 10, # left leg
+            14, 15, # left toe A and B
+            18, 19, 20, 21, # left hand
+            22, 23, 24, 25, # right leg
+            29, 30, # right toe A and B
+            33, 34, 35, 36] # right hand
+q_actuated = [x - 7 for x in q_actuated]
+
 class GaitDataLoader:
     def __init__(self, data_path):
         self.gait_data = spio.loadmat(data_path)['data']

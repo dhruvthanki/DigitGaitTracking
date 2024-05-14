@@ -101,7 +101,7 @@ class DigitCasadiWrapper:
         return self.Dcf.Dynamics.CM(self.q, self.dq).full()
     
     def get_u_limit(self):
-        self.u_limit = 0.9*np.array([[1.4,   1.4,  12.5,  12.5,   0.9,   0.9,   1.4,   1.4,   1.4,
+        self.u_limit = np.array([[1.4,   1.4,  12.5,  12.5,   0.9,   0.9,   1.4,   1.4,   1.4,
                           1.4,   1.4,   1.4,  12.5,  12.5,   0.9,   0.9,   1.4,   1.4,
                           1.4,   1.4]]).T
         # self.u_limit = np.array([[1.4,   1.4,  12.5,  12.5,   0.9,   0.9,   1.4,   1.4,   1.4,
