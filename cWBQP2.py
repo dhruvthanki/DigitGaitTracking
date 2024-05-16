@@ -218,7 +218,7 @@ class PWQP():
         # Combine all cost components into the total objective
         total_cost = (task_output_deviation_cost +
                     1 * control_effort_cost +
-                    1 * centroidal_momentum_cost +
+                    0 * centroidal_momentum_cost +
                     1*configuration_cost)
 
         objective = cp.Minimize(total_cost)

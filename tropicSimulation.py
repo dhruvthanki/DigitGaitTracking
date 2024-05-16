@@ -12,9 +12,11 @@ from GaitDataLoader import GaitDataLoader, q_i, q_actuated
 from DataLogger import RobotDataLogger
 
 is_paused = True
+sim_toggle = time.time()
 import keyboard
 def toggle_pause():
-    global is_paused
+    global is_paused, sim_toggle
+    sim_toggle = time.time()
     is_paused = not is_paused
     if is_paused:
         print("Simulation paused.")
@@ -129,7 +131,11 @@ class DigitSimulation:
             torque_limits = self.leftStanceQP.Dcf.get_u_limit().reshape((self.leftStanceQP.n_u,1))
             percent_to_max_torque = (np.abs(self.ctrl) / torque_limits.squeeze()) * 100
             
-            q_curr, dq_curr, q_act, dq_act = self.rightStanceQP.getActuateState(q, dq, q_actuated_des, dq_actuated_des)
+            if self.state == ControllerStance.RIGHT_STANCE.name:
+                q_curr, dq_curr, q_act, dq_act = self.rightStanceQP.getActuateState(q, dq, q_actuated_des, dq_actuated_des)
+            else:
+                q_curr, dq_curr, q_act, dq_act = self.leftStanceQP.getActuateState(q, dq, q_actuated_des, dq_actuated_des)
+                
             q_err = q_act - q_curr
             dq_err = dq_act - dq_curr
             
@@ -182,16 +188,16 @@ class DigitSimulation:
             # self.data.qvel[0] += 0.5
             self.s = 0
             self.last_impact_time = self.data.time
+            self.logger.saveSwitchingTimes(self.data.time)
             return True
         return False
 
     def run(self):
-        sim_start = time.time()
         while self.viewer.is_running():
-            global is_paused
-            if not is_paused and self.setOnce:
-                sim_start = time.time()
-                self.setOnce = False
+            global is_paused, sim_toggle
+            # if not is_paused and self.setOnce:
+            #     sim_start = time.time()
+            #     self.setOnce = False
             # else:
             #     self.setOnce = True
             step_start = time.time()
@@ -203,16 +209,20 @@ class DigitSimulation:
                 self.randon_basis = np.random.randn(6)
             
             if not is_paused:
+                # if self.data.time > 1.47:
+                #     is_paused = True
+                #     print(self.s)
                 self.data.ctrl = self.solve_qp()
                 torseID = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, 'base')
-                # self.data.xfrc_applied[torseID,:] = 10.0*self.randon_basis
+                # if self.data.time > 0.7 and self.data.time < 1.0:
+                #     self.data.xfrc_applied[torseID,:] = 50.0*self.randon_basis
                 mujoco.mj_step(self.model, self.data, nstep=15)
                 if not self.DOUBLE_STANCE:
                     self.impact_detected = self.foot_switching_algo()
             
             self.sync_viewer(step_start, self.randon_basis[:3])
             
-            if (time.time() - sim_start > 5) and not is_paused:
+            if (time.time() - sim_toggle > 5) and not is_paused:
                 print('Simulation time:', self.data.time)
                 break
 
