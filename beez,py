@@ -1,0 +1,60 @@
+import numpy as np
+from scipy.optimize import minimize
+from scipy.special import comb
+import matplotlib.pyplot as plt
+
+import numpy as np
+from scipy.optimize import least_squares
+
+def bezier_curve(t, control_points):
+    """Calculate the Bézier curve point for a given parameter t and control points."""
+    n = len(control_points) - 1
+    point = np.zeros_like(control_points[0])
+    for i, p in enumerate(control_points):
+        bernstein_poly = (np.math.factorial(n) / (np.math.factorial(i) * np.math.factorial(n - i))) * (t ** i) * ((1 - t) ** (n - i))
+        point += bernstein_poly * p
+    return point
+
+def fit_bezier_curve(data, degree):
+    """Fit a Bézier curve of a given degree to 1D data and its derivative."""
+    # Initial guess for the control points
+    initial_guess = np.linspace(min(data), max(data), degree + 1)
+    
+    # Time parameters for data points, assuming equally spaced
+    t_values = np.linspace(0, 1, len(data))
+    
+    def objective_function(control_points):
+        # Calculate the difference between the Bézier curve and the data points
+        bezier_points = np.array([bezier_curve(t, control_points) for t in t_values])
+        return bezier_points - data
+    
+    # Solve the least squares problem
+    result = least_squares(objective_function, initial_guess)
+    
+    return result.x
+
+def plot_bezier_curve_with_derivatives(control_points, data, num_points=100):
+    """
+    Plot a Bezier curve and its first and second derivatives.
+    """
+    t_values = np.linspace(0, 1, num_points)
+    curve_values = [bezier_curve(t, control_points) for t in t_values]
+
+    plt.figure(figsize=(10, 6))
+    plt.plot(t_values, curve_values, label='Bezier Curve')
+    plt.scatter(t_values, data, color='red', label='Data Points')
+    plt.title('Bezier Curve and its Derivatives')
+    plt.xlabel('t')
+    plt.ylabel('Value')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+# Example usage:
+data_points = np.array([0, 1, 4, 9, 16, 25])  # Example data points
+degree = 3  # Degree of the Bezier curve
+control_points = fit_bezier_curve(data_points, degree)
+print("Fitted Control Points:", control_points)
+# Plotting the curve and its derivatives
+plot_bezier_curve_with_derivatives(control_points, data_points, data_points.shape[0])
+
